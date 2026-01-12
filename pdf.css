@@ -2,9 +2,10 @@
    Global Settings
    ========================= */
 :root {
-    --color-text: #221f20; /* #1f2937; dark gray */
+    /* colors */
+    --color-text: #1f2937; /* dark gray */
     --color-muted: #6b7280;
-    --color-primary: #1d1966; /* #2563eb; */
+    --color-primary: #2563eb;
     --color-border: #e5e7eb;
     --color-bg: #fff;
 
@@ -15,6 +16,10 @@
 
     --color-table-header-bg: #f3f4f6;
     --color-table-row-even: #fafafa;
+
+    /* font */
+    --font-text: "Aptos";
+    --font-code: "JetBrains Mono", "Fira Code";
 }
 
 @page {
@@ -35,7 +40,7 @@ html {
 }
 
 body {
-    font-family: "Aptos", "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--font-text), "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     line-height: 1.6;
     color: var(--color-text);
     background: var(--color-bg);
@@ -155,7 +160,7 @@ a:hover {
    ========================= */
 
 code {
-    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-family: var(--font-code), Consolas, monospace;
     font-size: 0.95em;
     background: var(--color-code-bg);
     padding: 0.15em 0.35em;
@@ -163,7 +168,7 @@ code {
 }
 
 pre {
-    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-family: var(--font-code), Consolas, monospace;
     font-size: 0.9em;
     background: var(--color-code-bg);
     color: var(--color-code-text);
