@@ -5,9 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b067f950-a2b2-4bda-9af9-56dc2305a111" name="Changes" comment="Update Readme and `default.css`.">
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/npx.pdf" beforeDir="false" afterPath="$PROJECT_DIR$/README.pdf" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bash/md2pdf.sh" beforeDir="false" afterPath="$PROJECT_DIR$/bash/md2pdf.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -82,44 +82,6 @@
       <recent name="C:\Users\Christian\development\chrtmnns-md-scripts\css" />
     </key>
   </component>
-  <component name="RunManager" selected="Shell Script.md2pdf">
-    <configuration name="md-toc" type="ShConfigurationType">
-      <option name="SCRIPT_TEXT" value="for f in *.md; do npx markdown-toc -i &quot;$f&quot;; done " />
-      <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
-      <option name="SCRIPT_PATH" value="" />
-      <option name="SCRIPT_OPTIONS" value="" />
-      <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
-      <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="INDEPENDENT_INTERPRETER_PATH" value="false" />
-      <option name="INTERPRETER_PATH" value="$USER_HOME$/AppData/Local/Programs/Git/bin/bash.exe" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="EXECUTE_IN_TERMINAL" value="true" />
-      <option name="EXECUTE_SCRIPT_FILE" value="false" />
-      <envs />
-      <method v="2" />
-    </configuration>
-    <configuration name="md2pdf" type="ShConfigurationType">
-      <option name="SCRIPT_TEXT" value="npx md-to-pdf *.md --stylesheet pdf.css" />
-      <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
-      <option name="SCRIPT_PATH" value="" />
-      <option name="SCRIPT_OPTIONS" value="" />
-      <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
-      <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="INDEPENDENT_INTERPRETER_PATH" value="false" />
-      <option name="INTERPRETER_PATH" value="$USER_HOME$/AppData/Local/Programs/Git/bin/bash.exe" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="EXECUTE_IN_TERMINAL" value="true" />
-      <option name="EXECUTE_SCRIPT_FILE" value="false" />
-      <envs />
-      <method v="2">
-        <option name="RunConfigurationTask" enabled="true" run_configuration_name="md-toc" run_configuration_type="ShConfigurationType" />
-      </method>
-    </configuration>
-    <list>
-      <item itemvalue="Shell Script.md2pdf" />
-      <item itemvalue="Shell Script.md-toc" />
-    </list>
-  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -139,7 +101,7 @@
       <workItem from="1767883271548" duration="4026000" />
       <workItem from="1767955973093" duration="596000" />
       <workItem from="1768245086622" duration="297000" />
-      <workItem from="1775231420430" duration="1968000" />
+      <workItem from="1775231420430" duration="4686000" />
     </task>
     <task id="LOCAL-00001" summary="Add bash npx based md2pdf script">
       <option name="closed" value="true" />
@@ -157,7 +119,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775233352816</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="Update Readme and `default.css`.">
+      <option name="closed" value="true" />
+      <created>1775233412173</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1775233412173</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

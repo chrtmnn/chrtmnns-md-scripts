@@ -8,14 +8,20 @@ set -euo pipefail
 #   1) mmdc -i <src.md> -o <temp/converted.md>  (SVGs land next to converted.md)
 #   2) md-to-pdf converted.md (basedir=temp)
 
+# npm package selectors (override via env: DOCTOC_PKG, MERMAID_CLI_PKG, MD_TO_PDF_PKG)
+DOCTOC_PKG="${DOCTOC_PKG:-doctoc@2.3.0}"
+MERMAID_CLI_PKG="${MERMAID_CLI_PKG:-@mermaid-js/mermaid-cli@11.12.0}"
+MD_TO_PDF_PKG="${MD_TO_PDF_PKG:-md-to-pdf@5.2.5}"
+
 usage() {
   cat <<'EOF'
-Usage: md_pdf_mermaid.sh [-s pdf.css] [-o output_dir] [-r temp_root | -p] [-k] file1.md [file2.md ...]
+Usage: md2pdf.sh [-s pdf.css] [-o output_dir] [-r temp_root | -p] [-t] [-k] file1.md [file2.md ...]
 Options:
   -s <file>   Stylesheet passed to md-to-pdf (--stylesheet). Defaults to css/default.css.
   -o <dir>    Output directory for PDFs (default: alongside each input file).
   -r <dir>    Root directory for temp work dirs (default: system temp).
   -p          Place temp dir inside the output directory (or source dir if -o is absent).
+  -t          Run `doctoc` to inject a Table of Contents (uses a temp copy; source file untouched).
   -k          Keep temp working directory (prints its path).
   -h          Show this help.
 EOF
@@ -26,13 +32,15 @@ OUTPUT_DIR=""
 KEEP_TEMP=false
 TEMP_ROOT=""
 TEMP_IN_OUTPUT=false
+RUN_DOCTOC=false
 
-while getopts ":s:o:r:pkh" opt; do
+while getopts ":s:o:r:ptkh" opt; do
   case "$opt" in
     s) STYLESHEET="$OPTARG" ;;
     o) OUTPUT_DIR="$OPTARG" ;;
     r) TEMP_ROOT="$OPTARG" ;;
     p) TEMP_IN_OUTPUT=true ;;
+    t) RUN_DOCTOC=true ;;
     k) KEEP_TEMP=true ;;
     h)
       usage
@@ -99,9 +107,22 @@ convert_file() {
   fi
 
   converted_md="$workdir/${stem}_converted.md"
+  local input_md="$abs_src"
+  if $RUN_DOCTOC; then
+    input_md="$workdir/$base_name"
+    cp "$abs_src" "$input_md"
+    npx "$DOCTOC_PKG" "$input_md"
+  fi
+
+  local doc_title
+  if doc_title="$(awk '/^[[:space:]]*#/ { sub(/^[[:space:]]*#+[[:space:]]*/,"",$0); print; exit }' "$input_md")" && [[ -n "$doc_title" ]]; then
+    :
+  else
+    doc_title="$stem"
+  fi
 
   # Mermaid CLI handles extraction + SVG generation in one pass.
-  npx @mermaid-js/mermaid-cli -i "$abs_src" -o "$converted_md"
+  npx "$MERMAID_CLI_PKG" -i "$input_md" -o "$converted_md"
 
   if [[ -n "$OUTPUT_DIR" ]]; then
     target_dir="$OUTPUT_DIR"
@@ -113,7 +134,7 @@ convert_file() {
   # md-to-pdf writes next to the input markdown by default.
   temp_pdf="${converted_md%.md}.pdf"
   out_pdf="$target_dir/$stem.pdf"
-  cmd=(npx md-to-pdf "$converted_md" --basedir "$workdir")
+  cmd=(npx "$MD_TO_PDF_PKG" "$converted_md" --basedir "$workdir" --document-title "$doc_title")
   [[ -n "$STYLESHEET" ]] && cmd+=(--stylesheet "$STYLESHEET")
   "${cmd[@]}"
 
