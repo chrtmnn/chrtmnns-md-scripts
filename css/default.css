@@ -1,0 +1,265 @@
+/* =========================
+   Global Settings
+   ========================= */
+:root {
+    /* colors */
+    --color-text: #1f2937; /* dark gray */
+    --color-muted: #6b7280;
+    --color-primary: #2563eb;
+    --color-border: #e5e7eb;
+    --color-bg: #fff;
+
+    --color-code-bg: #f5f7fa;
+    --color-code-text: #1f2937;
+    --color-quote-bg: #f8fafc;
+    --color-quote-text: #374151;
+
+    --color-table-header-bg: #f3f4f6;
+    --color-table-row-even: #fafafa;
+
+    /* font */
+    --font-text: "Aptos";
+    --font-code: "JetBrains Mono", "Fira Code";
+}
+
+@page {
+    size: A4;
+    margin: 2cm 2cm 2cm 2.5cm;
+}
+
+@page {
+    @bottom-center {
+        content: counter(page);
+        font-size: 9pt;
+        color: var(--color-muted);
+    }
+}
+
+html {
+    font-size: 11pt;
+}
+
+body {
+    font-family: var(--font-text), "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.6;
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+/* =========================
+   Headings
+   ========================= */
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    line-height: 1.25;
+    margin-top: 0.6em;
+    margin-bottom: 0.3em;
+    page-break-after: avoid;
+}
+
+h1,
+h2 {
+    page-break-before: always;
+    break-before: page;
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+h1:first-of-type,
+h2:first-of-type {
+    page-break-before: auto;
+    break-before: auto;
+}
+
+h1 {
+    font-size: 2.2rem;
+    border-bottom: 3px solid var(--color-primary);
+    padding-bottom: 0.3em;
+}
+
+h2 {
+    font-size: 1.6rem;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 0.2em;
+}
+
+h3 {
+    font-size: 1.3rem;
+}
+
+h4 {
+    font-size: 1.1rem;
+}
+
+/* =========================
+   Paragraphs & Text
+   ========================= */
+
+p {
+    margin: 0.6em 0;
+}
+
+strong {
+    font-weight: 600;
+}
+
+em {
+    font-style: italic;
+}
+
+/* =========================
+   Lists
+   ========================= */
+
+ul, ol {
+    margin: 0.3em 0 0.3em 0.6em;
+}
+
+li {
+    margin: 0.3em 0;
+}
+
+/* =========================
+   Prevent page breaks
+   ONLY for nested lists
+   (level >= 2)
+   ========================= */
+
+ul ul,
+ol ol,
+ul ol,
+ol ul {
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+ul ul > li,
+ol ol > li,
+ul ol > li,
+ol ul > li {
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+/* =========================
+   Links
+   ========================= */
+
+a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* =========================
+   Code
+   ========================= */
+
+code {
+    font-family: var(--font-code), Consolas, monospace;
+    font-size: 0.95em;
+    background: var(--color-code-bg);
+    padding: 0.15em 0.35em;
+    border-radius: 2px;
+}
+
+pre {
+    font-family: var(--font-code), Consolas, monospace;
+    font-size: 0.9em;
+    background: var(--color-code-bg);
+    color: var(--color-code-text);
+    border: 1px solid var(--color-border);
+    padding: 0;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 1em 0;
+    page-break-inside: avoid;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+}
+
+/* =========================
+   Blockquotes
+   ========================= */
+
+blockquote {
+    margin: 1em 0;
+    padding: 0.6em 1em;
+    border-left: 4px solid var(--color-primary);
+    background: var(--color-quote-bg);
+    color: var(--color-quote-text);
+}
+
+/* =========================
+   Tables
+   ========================= */
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: 0.95em;
+}
+
+th, td {
+    border: 1px solid var(--color-border);
+    padding: 0.5em 0.6em;
+    text-align: left;
+}
+
+th {
+    background: var(--color-table-header-bg);
+    font-weight: 600;
+}
+
+tr:nth-child(even) td {
+    background: var(--color-table-row-even);
+}
+
+/* =========================
+   Images
+   ========================= */
+
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1em auto;
+}
+
+/* =========================
+   Horizontal Rule
+   ========================= */
+
+hr {
+    border: none;
+    border-top: 1px solid var(--color-border);
+    margin: 2em 0;
+}
+
+/* =========================
+   Page Break Helpers
+   ========================= */
+
+.page-break {
+    page-break-before: always;
+}
+
+/* =========================
+   Print Optimizations
+   ========================= */
+
+@media print {
+    a::after {
+        content: " (" attr(href) ")";
+        font-size: 0.85em;
+        color:  var(--color-muted);
+    }
+}

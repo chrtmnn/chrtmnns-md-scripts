@@ -4,12 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b067f950-a2b2-4bda-9af9-56dc2305a111" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+    <list default="true" id="b067f950-a2b2-4bda-9af9-56dc2305a111" name="Changes" comment="Update Readme and `default.css`.">
+      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/md.iml" beforeDir="false" afterPath="$PROJECT_DIR$/private-md.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/npx.pdf" beforeDir="false" afterPath="$PROJECT_DIR$/npx.pdf" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/npx.pdf" beforeDir="false" afterPath="$PROJECT_DIR$/README.pdf" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -25,12 +23,16 @@
     &quot;assignee&quot;: &quot;chrtmnn&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings">{
-  &quot;selectedUrlAndAccountId&quot;: {
-    &quot;url&quot;: &quot;https://github.com/chrtmnn/private-md.git&quot;,
-    &quot;accountId&quot;: &quot;d019ca4b-186d-45e9-a6c1-17218207e724&quot;
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/chrtmnn/chrtmnns-md-scripts.git",
+    "accountId": "464c676f-9e0b-48b9-8fae-d603fee7ae68"
   }
-}</component>
+}]]></component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 7
 }</component>
@@ -38,32 +40,48 @@
   <component name="ProjectViewState">
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;Shell Script.md-toc.executor&quot;: &quot;Run&quot;,
-    &quot;Shell Script.md2pdf.executor&quot;: &quot;Run&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "SHELLCHECK.PATH": "C:\\Users\\Christian\\AppData\\Roaming\\JetBrains\\WebStorm2026.1\\plugins\\Shell Script\\shellcheck.exe",
+    "Shell Script.md-toc.executor": "Run",
+    "Shell Script.md2pdf.executor": "Run",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "main",
+    "ignore.virus.scanning.warn.message": "true",
+    "javascript.preferred.runtime.type.id": "node",
+    "last_opened_file_path": "C:/Users/Christian/development/chrtmnns-md-scripts",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "preferences.lookFeel",
+    "vue.rearranger.settings.migration": "true"
   },
-  &quot;keyToStringList&quot;: {
-    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
-      &quot;Markdown&quot;
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "Markdown"
     ]
   }
-}</component>
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\Christian\development\chrtmnns-md-scripts" />
+      <recent name="C:\Users\Christian\development\chrtmnns-md-scripts\css" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\Christian\development\chrtmnns-md-scripts\bash" />
+      <recent name="C:\Users\Christian\development\chrtmnns-md-scripts\css" />
+    </key>
+  </component>
   <component name="RunManager" selected="Shell Script.md2pdf">
     <configuration name="md-toc" type="ShConfigurationType">
       <option name="SCRIPT_TEXT" value="for f in *.md; do npx markdown-toc -i &quot;$f&quot;; done " />
@@ -105,7 +123,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-3aa1da707db6-JavaScript-WS-252.27397.92" />
+        <option value="bundled-js-predefined-d6986cc7102b-3bd3a6803838-JavaScript-WS-261.22158.274" />
       </set>
     </attachedChunks>
   </component>
@@ -121,7 +139,25 @@
       <workItem from="1767883271548" duration="4026000" />
       <workItem from="1767955973093" duration="596000" />
       <workItem from="1768245086622" duration="297000" />
+      <workItem from="1775231420430" duration="1968000" />
     </task>
+    <task id="LOCAL-00001" summary="Add bash npx based md2pdf script">
+      <option name="closed" value="true" />
+      <created>1775233291225</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1775233291225</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Update Readme and `default.css`.">
+      <option name="closed" value="true" />
+      <created>1775233352816</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1775233352816</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -129,6 +165,8 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Update pdf.css" />
-    <option name="LAST_COMMIT_MESSAGE" value="" />
+    <MESSAGE value="Add bash npx based md2pdf script" />
+    <MESSAGE value="Update Readme and `default.css`." />
+    <option name="LAST_COMMIT_MESSAGE" value="Update Readme and `default.css`." />
   </component>
 </project>
