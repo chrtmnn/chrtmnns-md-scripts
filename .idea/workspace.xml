@@ -4,10 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b067f950-a2b2-4bda-9af9-56dc2305a111" name="Changes" comment="Update Readme and `default.css`.">
+    <list default="true" id="b067f950-a2b2-4bda-9af9-56dc2305a111" name="Changes" comment="Update Readme and `md2pdf` bash script">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bash/md2pdf.sh" beforeDir="false" afterPath="$PROJECT_DIR$/bash/md2pdf.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -101,7 +100,7 @@
       <workItem from="1767883271548" duration="4026000" />
       <workItem from="1767955973093" duration="596000" />
       <workItem from="1768245086622" duration="297000" />
-      <workItem from="1775231420430" duration="4686000" />
+      <workItem from="1775231420430" duration="4849000" />
     </task>
     <task id="LOCAL-00001" summary="Add bash npx based md2pdf script">
       <option name="closed" value="true" />
@@ -127,7 +126,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775233412173</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="Update Readme and `md2pdf` bash script">
+      <option name="closed" value="true" />
+      <created>1775236132931</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1775236132931</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -137,6 +144,7 @@
     <MESSAGE value="Update pdf.css" />
     <MESSAGE value="Add bash npx based md2pdf script" />
     <MESSAGE value="Update Readme and `default.css`." />
-    <option name="LAST_COMMIT_MESSAGE" value="Update Readme and `default.css`." />
+    <MESSAGE value="Update Readme and `md2pdf` bash script" />
+    <option name="LAST_COMMIT_MESSAGE" value="Update Readme and `md2pdf` bash script" />
   </component>
 </project>

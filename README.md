@@ -17,8 +17,8 @@ Collection of (hopefully) useful Markdown scripts.
 ## Prerequisites
 
 - Node.js (incl. npm/npx) available in PATH.
-- Internet access for the first run so `npx` can fetch `@mermaid-js/mermaid-cli` and `md-to-pdf` (or install them
-  globally ahead of time).
+- Internet access for the first run so `npx` can fetch `doctoc`, `@mermaid-js/mermaid-cli` and `md-to-pdf` (or install
+  them globally ahead of time with `npm install -g doctoc @mermaid-js/mermaid-cli md-to-pdf`).
 
 ## Markdown to PDF `bash/md2pdf.sh`
 
@@ -47,7 +47,8 @@ Collection of (hopefully) useful Markdown scripts.
 Override npm package versions used by `npx` via env vars:
 
 - `DOCTOC_PKG` (default [`doctoc@2.3.0`](https://www.npmjs.com/package/doctoc/v/2.3.0))
-- `MERMAID_CLI_PKG` (default [`@mermaid-js/mermaid-cli@11.12.0`](https://www.npmjs.com/package/@mermaid-js/mermaid-cli/v/11.12.0))
+- `MERMAID_CLI_PKG` (default [
+  `@mermaid-js/mermaid-cli@11.12.0`](https://www.npmjs.com/package/@mermaid-js/mermaid-cli/v/11.12.0))
 - `MD_TO_PDF_PKG` (default [`md-to-pdf@5.2.5`](https://www.npmjs.com/package/md-to-pdf/v/5.2.5))
 
 **Example**
