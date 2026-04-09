@@ -11,6 +11,8 @@ Collection of (hopefully) useful Markdown scripts.
 
 - [Prerequisites](#prerequisites)
 - [Markdown to PDF `bash/md2pdf.sh`](#markdown-to-pdf-bashmd2pdfsh)
+- [Markdown to PDF `powershell/md2pdf.ps1`](#markdown-to-pdf-powershellmd2pdfps1)
+- [Markdown to PDF `node/md2pdf.js`](#markdown-to-pdf-nodemd2pdfjs)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -55,4 +57,65 @@ Override npm package versions used by `npx` via env vars:
 
   ```bash
   ./bash/md2pdf.sh -t README.md
+  ```
+
+## Markdown to PDF `powershell/md2pdf.ps1`
+
+**Usage**
+
+`powershell/md2pdf.ps1 [-Stylesheet pdf.css] [-OutputDir output_dir] [-TempRoot temp_root | -TempInOutput] [-RunDoctoc] [-KeepTemp] file1.md [file2.md ...]`
+
+**Options**
+
+| option             | description                                                                   |
+|--------------------|-------------------------------------------------------------------------------|
+| `-Stylesheet <file>` | Stylesheet passed to md-to-pdf (--stylesheet). Defaults to `css/default.css`. |
+| `-OutputDir <dir>`  | Output directory for PDFs (default: alongside each input file).               |
+| `-TempRoot <dir>`   | Root directory for temp work dirs (default: system temp).                     |
+| `-TempInOutput`    | Place temp dir inside the output directory (or source dir if -o is absent).   |
+| `-RunDoctoc`       | Run `doctoc` to inject a Table of Contents (temp copy only).                  |
+| `-KeepTemp`        | Keep temp working directory (prints its path).                                |
+
+**Notes**
+
+- Identical functionality to `bash/md2pdf.sh`.
+- Supports short aliases: `-s`, `-o`, `-r`, `-p`, `-t`, `-k`.
+
+**Example**
+
+  ```powershell
+  ./powershell/md2pdf.ps1 -t README.md
+  ```
+
+## Markdown to PDF `node/md2pdf.js`
+
+**Usage**
+
+`node node/md2pdf.js [-s pdf.css] [-o output_dir] [-r temp_root | -p] [-t] [-k] file1.md [file2.md ...]`
+
+oder über npm:
+
+`npm run md2pdf -- [-s pdf.css] [-o output_dir] [-r temp_root | -p] [-t] [-k] file1.md [file2.md ...]`
+
+**Options**
+
+| option | description |
+|--------|-------------|
+| `-s, --stylesheet <file>` | Stylesheet passed to md-to-pdf (--stylesheet). Defaults to `css/default.css`. |
+| `-o, --output-dir <dir>` | Output directory for PDFs (default: alongside each input file). |
+| `-r, --temp-root <dir>` | Root directory for temp work dirs (default: system temp). |
+| `-p, --temp-in-output` | Place temp dir inside the output directory (or source dir if -o is absent). |
+| `-t, --run-doctoc` | Run `doctoc` to inject a Table of Contents (temp copy only). |
+| `-k, --keep-temp` | Keep temp working directory (prints its path). |
+| `-h, --help` | Show help. |
+
+**Notes**
+
+- Identical functionality to `bash/md2pdf.sh` and `powershell/md2pdf.ps1`.
+- Requires `commander` package.
+
+**Example**
+
+  ```bash
+  npm run md2pdf -- -t README.md
   ```
