@@ -1,0 +1,28 @@
+{
+  "name": "chrtmnns-md-scripts",
+  "version": "0.1.0",
+  "description": "Tools & scripts to create, edit and convert markdown files",
+  "scripts": {
+    "test": "node node/md2pdf.js README.md"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chrtmnn/chrtmnns-md-scripts.git"
+  },
+  "keywords": [
+    "markdown",
+    "pdf"
+  ],
+  "author": "Hartmann, Christian <christian.hartmann@de-computing.com> (https://www.de-group.net/)",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/chrtmnn/chrtmnns-md-scripts/issues"
+  },
+  "homepage": "https://github.com/chrtmnn/chrtmnns-md-scripts#readme",
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "11.12.0",
+    "commander": "^12.0.0",
+    "doctoc": "2.3.0",
+    "md-to-pdf": "5.2.5"
+  }
+}
