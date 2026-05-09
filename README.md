@@ -93,9 +93,9 @@ Override npm package versions used by `npx` via env vars:
 
 `node node/md2pdf.js [-s pdf.css] [-o output_dir] [-r temp_root | -p] [-t] [-k] file1.md [file2.md ...]`
 
-oder über npm:
+oder über pnpm:
 
-`npm run md2pdf -- [-s pdf.css] [-o output_dir] [-r temp_root | -p] [-t] [-k] file1.md [file2.md ...]`
+`pnpm run md2pdf -- [-s pdf.css] [-o output_dir] [-r temp_root | -p] [-t] [-k] file1.md [file2.md ...]`
 
 **Options**
 
@@ -117,5 +117,5 @@ oder über npm:
 **Example**
 
   ```bash
-  npm run md2pdf -- -t README.md
+  pnpm run md2pdf -- -t README.md
   ```
