@@ -6,6 +6,7 @@
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
 - [Prerequisites](#prerequisites)
+- [Global Wrapper](#global-wrapper)
 - [Markdown to PDF - `md2pdf`](#markdown-to-pdf---md2pdf)
 - [Table of Contents - `toc`](#table-of-contents---toc)
 - [Mermaid Diagrams - `diagrams`](#mermaid-diagrams---diagrams)
@@ -20,6 +21,31 @@
 - pnpm available in `PATH`.
 - Internet access for the first run so `npx` can fetch `doctoc`, `@mermaid-js/mermaid-cli` and `md-to-pdf` (or install
   them globally ahead of time with `npm install -g doctoc @mermaid-js/mermaid-cli md-to-pdf`).
+
+## Global Wrapper
+
+Add the repository `bin` directory to `PATH` to run `md2pdf` from any working directory:
+
+```powershell
+C:\Users\Christian\development\chrtmnns-md-scripts\bin
+```
+
+The wrapper changes into this repository, runs `pnpm md2pdf`, and resolves relative input/output paths against the
+directory where you called it.
+
+**Examples**
+
+Run from another directory with relative paths:
+
+  ```powershell
+  md2pdf README.md
+  ```
+
+Write the PDF to a relative output directory:
+
+  ```powershell
+  md2pdf -o pdf README.md
+  ```
 
 ## Markdown to PDF - `md2pdf`
 
