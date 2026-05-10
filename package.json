@@ -16,6 +16,9 @@
   },
   "keywords": [
     "markdown",
+    "md2pdf",
+    "mermaid",
+    "toc",
     "pdf"
   ],
   "author": "C.J. Hartmann <c@hrtmnn.com>",
