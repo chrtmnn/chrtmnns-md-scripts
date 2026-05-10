@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "description": "Tools & scripts to create, edit and convert markdown files",
   "scripts": {
-    "md2pdf": "node node/md2pdf.js",
-    "test": "node node/md2pdf.js README.md"
+    "md2pdf": "node src/md2pdf.js",
+    "test": "node src/md2pdf.js README.md"
   },
   "repository": {
     "type": "git",

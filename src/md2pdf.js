@@ -6,16 +6,21 @@ const { execSync } = require('child_process');
 const os = require('os');
 const { program } = require('commander');
 
-// Default package versions (consistent with PowerShell/Bash scripts)
+// Default package versions
 const DOCTOC_PKG = process.env.DOCTOC_PKG || 'doctoc@2.3.0';
 const MERMAID_CLI_PKG = process.env.MERMAID_CLI_PKG || '@mermaid-js/mermaid-cli@11.12.0';
 const MD_TO_PDF_PKG = process.env.MD_TO_PDF_PKG || 'md-to-pdf@5.2.5';
+
+function collect(value, previous) {
+  return previous.concat([value]);
+}
 
 program
   .name('md2pdf')
   .description('Render Mermaid diagrams and convert Markdown to PDF')
   .argument('<files...>', 'Markdown files to convert')
   .option('-s, --stylesheet <path>', 'Stylesheet passed to md-to-pdf')
+  .option('--css-var <name=value>', 'Override a CSS custom property, repeatable', collect, [])
   .option('-o, --output-dir <path>', 'Output directory for PDFs')
   .option('-r, --temp-root <path>', 'Root directory for temp work dirs')
   .option('-p, --temp-in-output', 'Place temp dir inside the output directory')
@@ -29,7 +34,7 @@ const files = program.args;
 // Resolve default stylesheet
 let stylesheet = options.stylesheet;
 if (!stylesheet) {
-  const defaultStylesheet = path.resolve(__dirname, '..', 'css', 'default.css');
+  const defaultStylesheet = path.resolve(__dirname, 'css', 'default.css');
   if (fs.existsSync(defaultStylesheet)) {
     stylesheet = defaultStylesheet;
   }
@@ -38,6 +43,59 @@ if (!stylesheet) {
 if (stylesheet && !fs.existsSync(stylesheet)) {
   console.error(`Stylesheet not found: ${stylesheet}`);
   process.exit(1);
+}
+
+function parseCssVars(values) {
+  return values.map((entry) => {
+    const separatorIndex = entry.indexOf('=');
+    if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
+      throw new Error(`Invalid CSS variable override: ${entry}. Expected name=value.`);
+    }
+
+    const rawName = entry.slice(0, separatorIndex).trim();
+    const value = entry.slice(separatorIndex + 1).trim();
+    const name = rawName.startsWith('--') ? rawName.slice(2) : rawName;
+
+    if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) {
+      throw new Error(`Invalid CSS variable name: ${rawName}`);
+    }
+
+    if (!value || /[{};]/.test(value)) {
+      throw new Error(`Invalid CSS variable value for ${rawName}: ${value}`);
+    }
+
+    return { name: `--${name}`, value };
+  });
+}
+
+let cssVars;
+try {
+  cssVars = parseCssVars(options.cssVar);
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+
+function createStylesheet(workdir) {
+  if (cssVars.length === 0) {
+    return stylesheet;
+  }
+
+  const overrideStylesheet = path.join(workdir, 'style-overrides.css');
+  const lines = [];
+  if (stylesheet) {
+    lines.push(fs.readFileSync(stylesheet, 'utf8'));
+    lines.push('');
+  }
+  lines.push(':root {');
+  cssVars.forEach(({ name, value }) => {
+    lines.push(`  ${name}: ${value};`);
+  });
+  lines.push('}');
+  lines.push('');
+
+  fs.writeFileSync(overrideStylesheet, lines.join('\n'), 'utf8');
+  return overrideStylesheet;
 }
 
 function convertMarkdownFile(src) {
@@ -100,8 +158,9 @@ function convertMarkdownFile(src) {
   // md-to-pdf
   console.log(`Running md-to-pdf on ${convertedMd}...`);
   let cmd = `npx ${MD_TO_PDF_PKG} "${convertedMd}" --basedir "${workdir}" --document-title "${docTitle}"`;
-  if (stylesheet) {
-    cmd += ` --stylesheet "${stylesheet}"`;
+  const effectiveStylesheet = createStylesheet(workdir);
+  if (effectiveStylesheet) {
+    cmd += ` --stylesheet "${effectiveStylesheet}"`;
   }
   
   execSync(cmd, { stdio: 'inherit' });

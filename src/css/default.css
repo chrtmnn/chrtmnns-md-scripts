@@ -20,6 +20,12 @@
     /* font */
     --font-text: "Aptos";
     --font-code: "JetBrains Mono", "Fira Code";
+
+    /* heading page breaks */
+    --heading-page-break-before: always;
+    --heading-break-before: page;
+    --first-heading-page-break-before: auto;
+    --first-heading-break-before: auto;
 }
 
 @page {
@@ -60,16 +66,16 @@ h1, h2, h3, h4, h5, h6 {
 
 h1,
 h2 {
-    page-break-before: always;
-    break-before: page;
+    page-break-before: var(--heading-page-break-before);
+    break-before: var(--heading-break-before);
     page-break-after: avoid;
     break-after: avoid;
 }
 
 h1:first-of-type,
 h2:first-of-type {
-    page-break-before: auto;
-    break-before: auto;
+    page-break-before: var(--first-heading-page-break-before);
+    break-before: var(--first-heading-break-before);
 }
 
 h1 {
@@ -229,9 +235,19 @@ tr:nth-child(even) td {
 
 img {
     max-width: 100%;
+    max-height: calc(100vh - 2em);
+    width: auto;
     height: auto;
+    object-fit: contain;
     display: block;
     margin: 1em auto;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+p:has(> img:only-child) {
+    page-break-inside: avoid;
+    break-inside: avoid;
 }
 
 /* =========================
