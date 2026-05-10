@@ -8,7 +8,7 @@
     "toc": "tsx src/toc.ts",
     "diagrams": "tsx src/diagrams.ts",
     "pdf": "tsx src/pdf.ts",
-    "test": "tsx src/md2pdf.ts --css-var heading-break-before=auto -t README.md"
+    "test": "tsx src/md2pdf.ts --css-var heading-break-before=auto README.md"
   },
   "repository": {
     "type": "git",
