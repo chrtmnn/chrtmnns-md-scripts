@@ -1,4 +1,6 @@
-.gitignore
+.idea
 node_modules
 README.pdf
 dist
+.claude
+CLAUDE.md
