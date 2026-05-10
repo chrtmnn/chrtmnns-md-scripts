@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "description": "Tools & scripts to create, edit and convert markdown files",
   "scripts": {
-    "md2pdf": "node src/md2pdf.js",
-    "test": "node src/md2pdf.js README.md"
+    "typecheck": "tsc --noEmit",
+    "md2pdf": "tsx src/md2pdf.ts",
+    "toc": "tsx src/toc.ts",
+    "diagrams": "tsx src/diagrams.ts",
+    "pdf": "tsx src/pdf.ts",
+    "test": "tsx src/md2pdf.ts --css-var heading-break-before=auto README.md"
   },
   "repository": {
     "type": "git",
@@ -26,5 +30,10 @@
     "doctoc": "2.3.0",
     "md-to-pdf": "5.2.5"
   },
-  "packageManager": "pnpm@10.33.2+sha512.a90faf6feeab71ad6c6e57f94e0fe1a12f5dcc22cd754db40ae9593eb6a3e0b6b12e3540218bb37ae083404b1f2ce6db2a4121e979829b4aff94b99f49da1cf8"
+  "packageManager": "pnpm@10.33.2+sha512.a90faf6feeab71ad6c6e57f94e0fe1a12f5dcc22cd754db40ae9593eb6a3e0b6b12e3540218bb37ae083404b1f2ce6db2a4121e979829b4aff94b99f49da1cf8",
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
 }
