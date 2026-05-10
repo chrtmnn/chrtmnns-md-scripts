@@ -4,14 +4,15 @@
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+  
 
 - [Prerequisites](#prerequisites)
 - [Global Wrapper](#global-wrapper)
 - [Markdown to PDF - `md2pdf`](#markdown-to-pdf---md2pdf)
 - [Table of Contents - `toc`](#table-of-contents---toc)
 - [Mermaid Diagrams - `diagrams`](#mermaid-diagrams---diagrams)
+  - [Mermaid Syntax Example](#mermaid-syntax-example)
 - [PDF Only - `pdf`](#pdf-only---pdf)
-- [Mermaid Example](#mermaid-example)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -24,10 +25,16 @@
 
 ## Global Wrapper
 
-Add the repository `bin` directory to `PATH` to run `md2pdf` from any working directory:
+Run the install script once from the repository root to add the `bin` directory to your user `PATH`:
 
 ```powershell
-C:\Users\Christian\development\chrtmnns-md-scripts\bin
+.\install.ps1
+```
+
+Restart your terminal afterwards. To remove the entry from `PATH` later:
+
+```powershell
+.\uninstall.ps1
 ```
 
 The wrapper changes into this repository, runs `pnpm md2pdf`, and resolves relative input/output paths against the
@@ -62,7 +69,7 @@ Write the PDF to a relative output directory:
 | `-o, --output-dir <dir>` | Output directory for PDFs (default: alongside each input file). |
 | `-r, --temp-root <dir>` | Root directory for temp work dirs (default: system temp). |
 | `-p, --temp-in-output` | Place temp dir inside the output directory (or source dir if -o is absent). |
-| `-t, --run-doctoc` | Run `doctoc` to inject a Table of Contents (temp copy only). |
+| `-t, --force-doctoc` | Force `doctoc` even when the file has no existing TOC markers (temp copy only). |
 | `-k, --keep-temp` | Keep temp working directory (prints its path). |
 | `-h, --help` | Show help. |
 
@@ -71,7 +78,7 @@ Write the PDF to a relative output directory:
 - CLI parsing uses [`commander`](https://www.npmjs.com/package/commander).
 - The pipeline uses [`doctoc`](https://www.npmjs.com/package/doctoc), [`@mermaid-js/mermaid-cli`](https://www.npmjs.com/package/@mermaid-js/mermaid-cli) and [`md-to-pdf`](https://www.npmjs.com/package/md-to-pdf).
 - Package scripts run TypeScript directly via `tsx`.
-- `-t, --run-doctoc` runs `doctoc` on a temporary copy, leaving the source Markdown unchanged.
+- Existing TOC markers (`<!-- START doctoc ... -->`) are always refreshed automatically. `-t` forces TOC creation even when none exists yet. Both run on a temp copy, leaving the source unchanged.
 
 **Examples**
 

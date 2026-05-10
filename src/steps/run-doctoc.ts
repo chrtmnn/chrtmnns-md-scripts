@@ -3,8 +3,15 @@ import path from 'path';
 import { execSync } from 'child_process';
 import { ConversionContext } from '../types';
 
+const DOCTOC_MARKER = '<!-- START doctoc generated TOC';
+
+function hasTocMarkers(filePath: string): boolean {
+  return fs.readFileSync(filePath, 'utf8').includes(DOCTOC_MARKER);
+}
+
 export function runDoctoc(context: ConversionContext): void {
-  if (!context.options.runDoctoc) {
+  const shouldRun = context.options.forceDoctoc || hasTocMarkers(context.sourceFile);
+  if (!shouldRun) {
     return;
   }
 

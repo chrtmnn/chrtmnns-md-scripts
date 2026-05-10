@@ -9,7 +9,7 @@ export type ConverterOptions = {
   outputDir?: string;
   tempRoot?: string;
   tempInOutput: boolean;
-  runDoctoc: boolean;
+  forceDoctoc: boolean;
   keepTemp: boolean;
   packages: {
     doctoc: string;

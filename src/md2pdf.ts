@@ -21,7 +21,7 @@ program
   .option('-o, --output-dir <path>', 'Output directory for PDFs')
   .option('-r, --temp-root <path>', 'Root directory for temp work dirs')
   .option('-p, --temp-in-output', 'Place temp dir inside the output directory')
-  .option('-t, --run-doctoc', 'Run doctoc to inject Table of Contents')
+  .option('-t, --force-doctoc', 'Force doctoc even when no TOC markers are present')
   .option('-k, --keep-temp', 'Keep temp working directory')
   .parse(process.argv);
 

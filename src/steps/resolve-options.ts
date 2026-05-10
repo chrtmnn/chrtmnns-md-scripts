@@ -9,7 +9,7 @@ type RawOptions = {
   outputDir?: string;
   tempRoot?: string;
   tempInOutput?: boolean;
-  runDoctoc?: boolean;
+  forceDoctoc?: boolean;
   keepTemp?: boolean;
 };
 
@@ -38,7 +38,7 @@ export function resolveOptions(program: Command): ConverterOptions {
     outputDir: rawOptions.outputDir,
     tempRoot: rawOptions.tempRoot,
     tempInOutput: Boolean(rawOptions.tempInOutput),
-    runDoctoc: Boolean(rawOptions.runDoctoc),
+    forceDoctoc: Boolean(rawOptions.forceDoctoc),
     keepTemp: Boolean(rawOptions.keepTemp),
     packages: {
       doctoc: process.env.DOCTOC_PKG || 'doctoc@2.3.0',
