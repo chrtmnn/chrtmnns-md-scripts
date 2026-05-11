@@ -13,6 +13,9 @@ $pathValueOptions = @{
     "--temp-root" = $true
 }
 
+# Options that take a value but whose value must NOT be resolved as a path.
+$passthroughValueOptions = @("--css-var")
+
 function Resolve-ArgumentPath {
     param([string]$Value)
 
@@ -67,6 +70,18 @@ for ($index = 0; $index -lt $CliArgs.Count; $index++) {
 
         $index++
         $resolvedArgs.Add((Resolve-ArgumentPath $CliArgs[$index]))
+        continue
+    }
+
+    if ($passthroughValueOptions -contains $arg) {
+        $resolvedArgs.Add($arg)
+        if ($index + 1 -ge $CliArgs.Count) {
+            Write-Error "Option $arg requires an argument."
+            exit 1
+        }
+
+        $index++
+        $resolvedArgs.Add($CliArgs[$index])
         continue
     }
 
