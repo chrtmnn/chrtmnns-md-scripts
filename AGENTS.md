@@ -1,0 +1,92 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+pnpm typecheck          # TypeScript type-check (no emit)
+pnpm md2pdf [options] <files...>   # Full pipeline: TOC → Mermaid → PDF
+pnpm toc <files...>                # Inject/update table of contents in-place
+pnpm diagrams [options] <files...> # Render Mermaid blocks to SVG
+pnpm pdf [options] <files...>      # PDF-only (skips TOC and diagram steps)
+pnpm test               # Manual smoke test of md2pdf with CSS overrides
+```
+
+Run a single tool directly with tsx:
+```bash
+npx tsx src/md2pdf.ts --help
+```
+
+There is no automated test suite beyond the manual `test` script.
+
+## Architecture
+
+The project is a CLI toolsuite for converting Markdown to PDF with Mermaid diagram support.
+
+### Pipeline model (`src/md2pdf.ts`)
+
+`md2pdf` is the main entry point and orchestrates a sequential, step-based pipeline. Each step is a function that accepts a `ConversionContext` and **mutates it in place** (all steps return `void`). Steps run in order; `cleanup` runs in a `finally` block unconditionally.
+
+```
+prepareWorkdir → runDoctoc → extractTitle → renderMermaid
+  → createStylesheet → renderPdf → copyOutput → cleanup
+```
+
+All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContext`, `CssVarOverride`) are in `src/types.ts`.
+
+### `ConversionContext` field flow
+
+`prepareWorkdir` initialises the context. Key fields that steps modify:
+
+| Field | Set by | Purpose |
+|---|---|---|
+| `inputMarkdown` | `prepareWorkdir` (source path) / `runDoctoc` (temp copy) | Path fed to mermaid-cli |
+| `convertedMarkdown` | `prepareWorkdir` | Output of mermaid-cli, input to md-to-pdf |
+| `docTitle` | `extractTitle` | `--document-title` passed to md-to-pdf |
+| `effectiveStylesheet` | `createStylesheet` | Final CSS path (base or merged with overrides) |
+
+### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
+
+`runDoctoc` runs automatically when the source file contains `<!-- START doctoc generated TOC`. The `-t`/`--force-doctoc` flag forces a run even when no markers are present. In both cases, the file is copied to the temp dir first — the source is never modified.
+
+### Temp directory strategy
+
+Each conversion creates an isolated temp directory (`stem_<8 random chars>`). Location:
+- Default: OS temp dir
+- `-r <root>`: custom root directory
+- `-p`: inside the output directory (or source dir if `-o` is absent)
+
+The `-k` flag preserves the temp dir for debugging.
+
+### CSS variable system
+
+`src/css/default.css` defines all CSS custom properties. `--css-var name=value` (repeatable, leading `--` optional) injects overrides into a `:root {}` block appended to the base stylesheet in a merged temp file (`style-overrides.css`). Key properties:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `--heading-page-break-before` | `always` | Page break before h1/h2 |
+| `--heading-break-before` | `page` | Same, modern syntax |
+| `--first-heading-page-break-before` | `auto` | Suppresses break before the first h1/h2 |
+| `--font-text` | `"Aptos"` | Body font |
+| `--font-code` | `"JetBrains Mono"` | Code font |
+
+To disable per-heading page breaks: `--css-var heading-page-break-before=auto --css-var heading-break-before=auto`.
+
+### External tool invocation
+
+All three sub-tools are invoked via `npx` using `execSync`. Fallback versions are hardcoded in `resolve-options.ts` (not the `^` ranges in `package.json`):
+
+| Tool | Env var override | Hardcoded fallback |
+|---|---|---|
+| doctoc | `DOCTOC_PKG` | `doctoc@2.3.0` |
+| @mermaid-js/mermaid-cli | `MERMAID_CLI_PKG` | `@mermaid-js/mermaid-cli@11.12.0` |
+| md-to-pdf | `MD_TO_PDF_PKG` | `md-to-pdf@5.2.5` |
+
+### Standalone tools (`src/toc.ts`, `src/diagrams.ts`, `src/pdf.ts`)
+
+`toc.ts` and `diagrams.ts` are thin wrappers that call the respective `npx` tool directly. `pdf.ts` is self-contained — it duplicates the `extractTitle` and `createEffectiveStylesheet` logic from the pipeline steps rather than importing them.
+
+### Global wrapper (`bin/`)
+
+`bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to the pnpm script. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `install.ps1`; remove via `uninstall.ps1`.

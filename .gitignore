@@ -1,6 +1,5 @@
+.claude
 .idea
+dist
 node_modules
 README.pdf
-dist
-.claude
-CLAUDE.md
