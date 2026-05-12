@@ -4,9 +4,6 @@
   "description": "Tools & scripts to create, edit and convert markdown files",
   "scripts": {
     "md2pdf": "tsx src/md2pdf.ts",
-    "toc": "tsx src/toc.ts",
-    "diagrams": "tsx src/diagrams.ts",
-    "pdf": "tsx src/pdf.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx src/md2pdf.ts --css-var heading-break-before=auto README.md"
   },

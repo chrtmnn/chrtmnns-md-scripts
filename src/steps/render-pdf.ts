@@ -1,13 +1,26 @@
-import { execSync } from 'child_process';
 import { ConversionContext } from '../types';
+import { runNpx } from './run-npx';
 
+/**
+ * Converts the Mermaid-processed Markdown file to PDF through md-to-pdf.
+ *
+ * @param context - Mutable conversion state for the current source file.
+ */
 export function renderPdf(context: ConversionContext): void {
   console.log(`Running md-to-pdf on ${context.convertedMarkdown}...`);
 
-  let command = `npx ${context.options.packages.mdToPdf} "${context.convertedMarkdown}" --basedir "${context.workdir}" --document-title "${context.docTitle}"`;
+  const args = [
+    context.options.packages.mdToPdf,
+    context.convertedMarkdown,
+    '--basedir',
+    context.workdir,
+    '--document-title',
+    context.docTitle,
+  ];
+
   if (context.effectiveStylesheet) {
-    command += ` --stylesheet "${context.effectiveStylesheet}"`;
+    args.push('--stylesheet', context.effectiveStylesheet);
   }
 
-  execSync(command, { stdio: 'inherit' });
+  runNpx(args);
 }

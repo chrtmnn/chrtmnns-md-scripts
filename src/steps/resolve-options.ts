@@ -13,10 +13,23 @@ type RawOptions = {
   keepTemp?: boolean;
 };
 
+/**
+ * Commander collector for repeatable CLI options.
+ *
+ * @param value - Newly parsed option value.
+ * @param previous - Previously collected values for the same option.
+ * @returns A new array containing all collected values.
+ */
 export function collect(value: string, previous: string[]): string[] {
   return previous.concat([value]);
 }
 
+/**
+ * Resolves and validates raw Commander options into the internal options shape.
+ *
+ * @param program - Parsed Commander program instance.
+ * @returns Converter options with defaults, package selectors, and CSS overrides resolved.
+ */
 export function resolveOptions(program: Command): ConverterOptions {
   const rawOptions = program.opts<RawOptions>();
   let stylesheet = rawOptions.stylesheet;
@@ -48,6 +61,12 @@ export function resolveOptions(program: Command): ConverterOptions {
   };
 }
 
+/**
+ * Parses `--css-var name=value` entries into normalized CSS custom properties.
+ *
+ * @param values - Raw CLI values collected from `--css-var`.
+ * @returns Validated CSS variable overrides.
+ */
 function parseCssVars(values: string[]): CssVarOverride[] {
   return values.map((entry) => {
     const separatorIndex = entry.indexOf('=');

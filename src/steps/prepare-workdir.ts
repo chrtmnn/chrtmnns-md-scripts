@@ -3,6 +3,13 @@ import os from 'os';
 import path from 'path';
 import { ConversionContext, ConverterOptions } from '../types';
 
+/**
+ * Creates the per-file conversion context and temporary work directory.
+ *
+ * @param sourceFile - Markdown file path received from the CLI.
+ * @param options - Resolved converter options for the current run.
+ * @returns A populated conversion context, or `undefined` when the source file does not exist.
+ */
 export function prepareWorkdir(sourceFile: string, options: ConverterOptions): ConversionContext | undefined {
   if (!fs.existsSync(sourceFile)) {
     console.warn(`File not found: ${sourceFile}`);

@@ -9,10 +9,7 @@
 - [Prerequisites](#prerequisites)
 - [Global Wrapper](#global-wrapper)
 - [Markdown to PDF - `md2pdf`](#markdown-to-pdf---md2pdf)
-- [Table of Contents - `toc`](#table-of-contents---toc)
-- [Mermaid Diagrams - `diagrams`](#mermaid-diagrams---diagrams)
-  - [Mermaid Syntax Example](#mermaid-syntax-example)
-- [PDF Only - `pdf`](#pdf-only---pdf)
+- [Mermaid Syntax Example](#mermaid-syntax-example)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -94,64 +91,7 @@ Run the full pipeline with CSS variable overrides:
   pnpm md2pdf --css-var heading-page-break-before=auto --css-var heading-break-before=auto README.md
   ```
 
-## Table of Contents - `toc`
-
-**Usage**
-
-`pnpm toc file1.md [file2.md ...]`
-
-**Notes**
-
-- Updates the source Markdown files in place.
-- Uses [`doctoc`](https://www.npmjs.com/package/doctoc); override the package selector with `DOCTOC_PKG`.
-
-**Examples**
-
-Update the table of contents in Markdown files:
-
-  ```bash
-  pnpm toc README.md
-  ```
-
-Update multiple Markdown files:
-
-  ```bash
-  pnpm toc README.md docs/usage.md
-  ```
-
-## Mermaid Diagrams - `diagrams`
-
-**Usage**
-
-`pnpm diagrams [-o output_dir] file1.md [file2.md ...]`
-
-**Options**
-
-| option | description |
-|--------|-------------|
-| `-o, --output-dir <dir>` | Output directory for converted Markdown files. |
-| `-h, --help` | Show help. |
-
-**Notes**
-
-- Renders Mermaid fences to SVG and writes converted Markdown files.
-- Uses [`@mermaid-js/mermaid-cli`](https://www.npmjs.com/package/@mermaid-js/mermaid-cli); override the package selector with `MERMAID_CLI_PKG`.
-
-**Examples**
-
-Render Mermaid diagrams into a converted Markdown file:
-
-  ```bash
-  pnpm diagrams -o . README.md
-  ```
-
-Render Mermaid diagrams for multiple files into `tmp`:
-
-  ```bash
-  pnpm diagrams -o tmp README.md docs/usage.md
-  ```
-
-### Mermaid Syntax Example
+## Mermaid Syntax Example
 
 **Markdown input**
 
@@ -172,38 +112,3 @@ flowchart LR
 ```
 
 > More: https://mermaid.js.org/intro/syntax-reference.html
-
-## PDF Only - `pdf`
-
-**Usage**
-
-`pnpm pdf [-s pdf.css] [--css-var name=value] [-o output_dir] file1.md [file2.md ...]`
-
-**Options**
-
-| option | description |
-|--------|-------------|
-| `-s, --stylesheet <file>` | Stylesheet passed to md-to-pdf. Defaults to `src/css/default.css`. |
-| `--css-var <name=value>` | Override a CSS custom property for this run. Repeat for multiple variables. |
-| `-o, --output-dir <dir>` | Output directory for PDFs. |
-| `-h, --help` | Show help. |
-
-**Notes**
-
-- Converts Markdown to PDF without running `doctoc` or `mermaid-cli`.
-- Uses [`md-to-pdf`](https://www.npmjs.com/package/md-to-pdf).
-- Use this after `pnpm diagrams` if the file already references rendered diagram assets.
-
-**Examples**
-
-Convert an already prepared Markdown file to PDF:
-
-  ```bash
-  pnpm pdf README_converted.md
-  ```
-
-Convert a prepared Markdown file with CSS overrides:
-
-  ```bash
-  pnpm pdf --css-var heading-break-before=auto README_converted.md
-  ```

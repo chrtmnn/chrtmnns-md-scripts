@@ -1,15 +1,12 @@
-# CLAUDE.md
+# AGENTS
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI Agents when working with code in this repository.
 
 ## Commands
 
 ```bash
 pnpm typecheck          # TypeScript type-check (no emit)
 pnpm md2pdf [options] <files...>   # Full pipeline: TOC → Mermaid → PDF
-pnpm toc <files...>                # Inject/update table of contents in-place
-pnpm diagrams [options] <files...> # Render Mermaid blocks to SVG
-pnpm pdf [options] <files...>      # PDF-only (skips TOC and diagram steps)
 pnpm test               # Manual smoke test of md2pdf with CSS overrides
 ```
 
@@ -75,17 +72,13 @@ To disable per-heading page breaks: `--css-var heading-page-break-before=auto --
 
 ### External tool invocation
 
-All three sub-tools are invoked via `npx` using `execSync`. Fallback versions are hardcoded in `resolve-options.ts` (not the `^` ranges in `package.json`):
+All three sub-tools are invoked via `npx` through `runNpx`. Fallback versions are hardcoded in `resolve-options.ts` (not the `^` ranges in `package.json`):
 
 | Tool | Env var override | Hardcoded fallback |
 |---|---|---|
 | doctoc | `DOCTOC_PKG` | `doctoc@2.3.0` |
 | @mermaid-js/mermaid-cli | `MERMAID_CLI_PKG` | `@mermaid-js/mermaid-cli@11.12.0` |
 | md-to-pdf | `MD_TO_PDF_PKG` | `md-to-pdf@5.2.5` |
-
-### Standalone tools (`src/toc.ts`, `src/diagrams.ts`, `src/pdf.ts`)
-
-`toc.ts` and `diagrams.ts` are thin wrappers that call the respective `npx` tool directly. `pdf.ts` is self-contained — it duplicates the `extractTitle` and `createEffectiveStylesheet` logic from the pipeline steps rather than importing them.
 
 ### Global wrapper (`bin/`)
 
