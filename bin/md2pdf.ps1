@@ -95,7 +95,7 @@ for ($index = 0; $index -lt $CliArgs.Count; $index++) {
 
 Push-Location $RepoRoot
 try {
-    & pnpm md2pdf -- @resolvedArgs
+    & pnpm --silent md2pdf -- @resolvedArgs
     exit $LASTEXITCODE
 }
 finally {

@@ -28,6 +28,8 @@ export type ConverterOptions = {
   updateMdToc: boolean;
   /** Whether temporary work directories should be preserved after conversion. */
   keepTemp: boolean;
+  /** Whether external tool output should be printed while commands run. */
+  verbose: boolean;
   /** Package selectors used for external npx invocations. */
   packages: {
     doctoc: string;

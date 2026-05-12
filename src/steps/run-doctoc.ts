@@ -31,15 +31,13 @@ export function runDoctoc(context: ConversionContext): void {
   }
 
   if (context.options.updateMdToc && sourceHasToc) {
-    console.log(`Updating doctoc in ${context.sourceFile}...`);
-    runNpx([context.options.packages.doctoc, context.sourceFile]);
+    runNpx([context.options.packages.doctoc, context.sourceFile], { verbose: context.options.verbose });
   }
 
   context.inputMarkdown = path.join(context.workdir, context.baseName);
   fs.copyFileSync(context.sourceFile, context.inputMarkdown);
 
   if (!context.options.updateMdToc || !sourceHasToc) {
-    console.log(`Running doctoc on ${context.inputMarkdown}...`);
-    runNpx([context.options.packages.doctoc, context.inputMarkdown]);
+    runNpx([context.options.packages.doctoc, context.inputMarkdown], { verbose: context.options.verbose });
   }
 }

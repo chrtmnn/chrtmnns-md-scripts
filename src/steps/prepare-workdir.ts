@@ -12,7 +12,6 @@ import { ConversionContext, ConverterOptions } from '../types';
  */
 export function prepareWorkdir(sourceFile: string, options: ConverterOptions): ConversionContext | undefined {
   if (!fs.existsSync(sourceFile)) {
-    console.warn(`File not found: ${sourceFile}`);
     return undefined;
   }
 

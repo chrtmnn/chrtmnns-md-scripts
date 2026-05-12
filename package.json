@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/chrtmnn/chrtmnns-md-scripts#readme",
   "dependencies": {
+    "@clack/prompts": "^1.4.0",
     "@mermaid-js/mermaid-cli": "^11.12.0",
     "commander": "^12.0.0",
     "doctoc": "^2.3.0",

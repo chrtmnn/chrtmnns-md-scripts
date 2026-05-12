@@ -6,7 +6,7 @@ Convert Markdown files to PDF from any terminal with one command:
 md2pdf README.md
 ```
 
-The command refreshes an existing doctoc table of contents on a temporary copy, renders Mermaid diagrams, and writes a PDF next to the Markdown file unless another output directory is configured.
+The command shows a compact progress view, refreshes an existing doctoc table of contents on a temporary copy, renders Mermaid diagrams, and writes a PDF next to the Markdown file unless another output directory is configured.
 
 ## Installation
 
@@ -62,9 +62,15 @@ Show help:
 md2pdf
 ```
 
+Show output from the underlying conversion tools:
+
+```powershell
+md2pdf --verbose README.md
+```
+
 ## Options
 
-`md2pdf [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [files...]`
+`md2pdf [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [--verbose] [files...]`
 
 | option                    | description                                                                                               |
 |---------------------------|-----------------------------------------------------------------------------------------------------------|
@@ -76,6 +82,7 @@ md2pdf
 | `-f, --force-doctoc`      | Create or refresh a TOC on the temporary conversion copy, even without source TOC markers.                 |
 | `-u, --update-md-toc`     | Update an existing doctoc TOC in the original Markdown file. Does not create a new source TOC.             |
 | `-k, --keep-temp`         | Keep the temporary work directory and print its path.                                                     |
+| `--verbose`               | Print output from doctoc, mermaid-cli, and md-to-pdf while they run.                                      |
 | `-h, --help`              | Show help.                                                                                                |
 
 ## Uninstall
@@ -88,24 +95,24 @@ Remove the wrapper from your user `PATH`:
 
 Restart your terminal afterwards.
 
-## Mermaid
+## Mermaid Diagram Syntax
 
-Mermaid code fences are rendered automatically during conversion.
+Mermaid code fences are rendered automatically during conversion. For further information visit https://mermaid.js.org/intro/syntax-reference.html.
 
-Markdown input:
+**Markdown input**:
 
 <pre><code>```mermaid
 flowchart LR
-  Markdown[Markdown file] --> Toc[Table of Contents]
-  Toc --> Diagrams[Rendered diagrams]
-  Diagrams --> Pdf[PDF output]
+  A[Markdown file] --> B[Table of Contents]
+  B --> C[Render diagrams]
+  C --> D[PDF output]
 ```</code></pre>
 
-Rendered preview:
+**Rendered preview**:
 
 ```mermaid
 flowchart LR
-  Markdown[Markdown file] --> Toc[Table of Contents]
-  Toc --> Diagrams[Rendered diagrams]
-  Diagrams --> Pdf[PDF output]
+  A[Markdown file] --> B[Table of Contents]
+  B --> C[Render diagrams]
+  C --> D[PDF output]
 ```

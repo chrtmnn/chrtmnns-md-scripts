@@ -7,8 +7,6 @@ import { runNpx } from './run-npx';
  * @param context - Mutable conversion state for the current source file.
  */
 export function renderPdf(context: ConversionContext): void {
-  console.log(`Running md-to-pdf on ${context.convertedMarkdown}...`);
-
   const args = [
     context.options.packages.mdToPdf,
     context.convertedMarkdown,
@@ -22,5 +20,5 @@ export function renderPdf(context: ConversionContext): void {
     args.push('--stylesheet', context.effectiveStylesheet);
   }
 
-  runNpx(args);
+  runNpx(args, { verbose: context.options.verbose });
 }

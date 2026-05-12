@@ -7,6 +7,8 @@ import { runNpx } from './run-npx';
  * @param context - Mutable conversion state for the current source file.
  */
 export function renderMermaid(context: ConversionContext): void {
-  console.log(`Running mermaid-cli on ${context.inputMarkdown}...`);
-  runNpx([context.options.packages.mermaidCli, '-i', context.inputMarkdown, '-o', context.convertedMarkdown]);
+  runNpx(
+    [context.options.packages.mermaidCli, '-i', context.inputMarkdown, '-o', context.convertedMarkdown],
+    { verbose: context.options.verbose },
+  );
 }

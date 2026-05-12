@@ -23,7 +23,9 @@ The project is a CLI toolsuite for converting Markdown to PDF with Mermaid diagr
 
 ### Pipeline model (`src/md2pdf.ts`)
 
-`md2pdf` is the main entry point and orchestrates a sequential, step-based pipeline. Each step is a function that accepts a `ConversionContext` and **mutates it in place** (all steps return `void`). Steps run in order; `cleanup` runs in a `finally` block unconditionally.
+`md2pdf` is the main entry point. After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / per-step spinner / `outro` UI. Each step is wrapped by a local `runStep(label, action)` helper that drives a spinner (or `log.info`/`log.success` when `--verbose` is set).
+
+Each step is a function that accepts a `ConversionContext` and **mutates it in place** (all steps return `void`). Steps run in order; `cleanup` runs in a `finally` block unconditionally.
 
 ```
 prepareWorkdir → runDoctoc → extractTitle → renderMermaid
@@ -72,7 +74,7 @@ To disable per-heading page breaks: `--css-var heading-page-break-before=auto --
 
 ### External tool invocation
 
-All three sub-tools are invoked via `npx` through `runNpx`. Fallback versions are hardcoded in `resolve-options.ts` (not the `^` ranges in `package.json`):
+All three sub-tools are invoked via `npx` through `runNpx` (`src/steps/run-npx.ts`). Output is piped (hidden) by default and inherited when `--verbose` is set. On failure, `runNpx` re-throws with the tool's stderr/stdout as the error message. Fallback versions are hardcoded in `resolve-options.ts` (not the `^` ranges in `package.json`):
 
 | Tool | Env var override | Hardcoded fallback |
 |---|---|---|
@@ -82,4 +84,6 @@ All three sub-tools are invoked via `npx` through `runNpx`. Fallback versions ar
 
 ### Global wrapper (`bin/`)
 
-`bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to the pnpm script. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `install.ps1`; remove via `uninstall.ps1`.
+`bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to `pnpm --silent md2pdf`. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `install.ps1`; remove via `uninstall.ps1`.
+
+The wrapper classifies each CLI argument before forwarding it: path options (`-s`, `-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`--css-var`) have their value forwarded verbatim; flags and positional arguments are resolved as paths or passed as-is.
