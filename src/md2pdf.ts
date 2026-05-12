@@ -15,15 +15,20 @@ import { ConverterOptions } from './types';
 program
   .name('md2pdf')
   .description('Render Mermaid diagrams and convert Markdown to PDF')
-  .argument('<files...>', 'Markdown files to convert')
+  .argument('[files...]', 'Markdown files to convert')
   .option('-s, --stylesheet <path>', 'Stylesheet passed to md-to-pdf')
   .option('--css-var <name=value>', 'Override a CSS custom property, repeatable', collect, [])
   .option('-o, --output-dir <path>', 'Output directory for PDFs')
   .option('-r, --temp-root <path>', 'Root directory for temp work dirs')
   .option('-p, --temp-in-output', 'Place temp dir inside the output directory')
-  .option('-t, --force-doctoc', 'Force doctoc even when no TOC markers are present')
+  .option('-f, --force-doctoc', 'Force doctoc even when no TOC markers are present')
+  .option('-u, --update-md-toc', 'Update an existing doctoc table of contents in the source Markdown')
   .option('-k, --keep-temp', 'Keep temp working directory')
   .parse(process.argv);
+
+if (program.args.length === 0) {
+  program.help();
+}
 
 let options: ConverterOptions;
 try {

@@ -10,6 +10,7 @@ type RawOptions = {
   tempRoot?: string;
   tempInOutput?: boolean;
   forceDoctoc?: boolean;
+  updateMdToc?: boolean;
   keepTemp?: boolean;
 };
 
@@ -52,6 +53,7 @@ export function resolveOptions(program: Command): ConverterOptions {
     tempRoot: rawOptions.tempRoot,
     tempInOutput: Boolean(rawOptions.tempInOutput),
     forceDoctoc: Boolean(rawOptions.forceDoctoc),
+    updateMdToc: Boolean(rawOptions.updateMdToc),
     keepTemp: Boolean(rawOptions.keepTemp),
     packages: {
       doctoc: process.env.DOCTOC_PKG || 'doctoc@2.3.0',

@@ -16,20 +16,30 @@ function hasTocMarkers(filePath: string): boolean {
 }
 
 /**
- * Refreshes or creates a table of contents on a temporary Markdown copy.
+ * Refreshes or creates a table of contents for the conversion input.
  *
- * The original source file is never modified.
+ * The source Markdown is updated only when `--update-md-toc` is set and
+ * doctoc markers already exist in the original file.
  *
  * @param context - Mutable conversion state for the current source file.
  */
 export function runDoctoc(context: ConversionContext): void {
-  const shouldRun = context.options.forceDoctoc || hasTocMarkers(context.sourceFile);
+  const sourceHasToc = hasTocMarkers(context.sourceFile);
+  const shouldRun = context.options.forceDoctoc || sourceHasToc;
   if (!shouldRun) {
     return;
   }
 
+  if (context.options.updateMdToc && sourceHasToc) {
+    console.log(`Updating doctoc in ${context.sourceFile}...`);
+    runNpx([context.options.packages.doctoc, context.sourceFile]);
+  }
+
   context.inputMarkdown = path.join(context.workdir, context.baseName);
   fs.copyFileSync(context.sourceFile, context.inputMarkdown);
-  console.log(`Running doctoc on ${context.inputMarkdown}...`);
-  runNpx([context.options.packages.doctoc, context.inputMarkdown]);
+
+  if (!context.options.updateMdToc || !sourceHasToc) {
+    console.log(`Running doctoc on ${context.inputMarkdown}...`);
+    runNpx([context.options.packages.doctoc, context.inputMarkdown]);
+  }
 }

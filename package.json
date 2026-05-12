@@ -5,7 +5,7 @@
   "scripts": {
     "md2pdf": "tsx src/md2pdf.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/md2pdf.ts --css-var heading-break-before=auto README.md"
+    "test": "tsx src/md2pdf.ts -u --css-var heading-break-before=auto README.md"
   },
   "repository": {
     "type": "git",

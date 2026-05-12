@@ -24,6 +24,8 @@ export type ConverterOptions = {
   tempInOutput: boolean;
   /** Whether doctoc should run even when the source file has no existing TOC markers. */
   forceDoctoc: boolean;
+  /** Whether an existing doctoc table of contents should be updated in the source Markdown. */
+  updateMdToc: boolean;
   /** Whether temporary work directories should be preserved after conversion. */
   keepTemp: boolean;
   /** Package selectors used for external npx invocations. */

@@ -6,7 +6,7 @@ This file provides guidance to AI Agents when working with code in this reposito
 
 ```bash
 pnpm typecheck          # TypeScript type-check (no emit)
-pnpm md2pdf [options] <files...>   # Full pipeline: TOC → Mermaid → PDF
+pnpm md2pdf [options] [files...]   # Full pipeline: TOC → Mermaid → PDF
 pnpm test               # Manual smoke test of md2pdf with CSS overrides
 ```
 
@@ -45,7 +45,7 @@ All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContex
 
 ### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
 
-`runDoctoc` runs automatically when the source file contains `<!-- START doctoc generated TOC`. The `-t`/`--force-doctoc` flag forces a run even when no markers are present. In both cases, the file is copied to the temp dir first — the source is never modified.
+`runDoctoc` runs automatically when the source file contains `<!-- START doctoc generated TOC`. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. By default, doctoc runs on a temp copy. The `-u`/`--update-md-toc` flag also updates the original Markdown file when it already has doctoc markers.
 
 ### Temp directory strategy
 
