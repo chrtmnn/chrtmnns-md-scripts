@@ -13,16 +13,15 @@ The command shows a compact progress view, refreshes an existing doctoc table of
 Prerequisites:
 
 - Node.js with `npm`/`npx` available in `PATH`
-- pnpm available in `PATH`
 - Internet access on first use so `npx` can fetch the conversion tools
 
-Install the global wrapper once from this repository:
+Run the install script once from this repository:
 
 ```powershell
 .\install.ps1
 ```
 
-Restart your terminal afterwards. The `md2pdf` command is then available from any directory.
+The script installs pnpm globally (with confirmation) if it is not already available, runs `pnpm install` if dependencies are missing, and adds the `bin/` directory to your user `PATH`. Restart your terminal afterwards. The `md2pdf` command is then available from any directory.
 
 ## Usage
 
