@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { ConversionContext } from '../types';
+import { ConversionContext, ConverterOptions } from '../types';
 import { runNpx } from './run-npx';
 
 const DOCTOC_MARKER = '<!-- START doctoc generated TOC';
@@ -16,19 +16,27 @@ function hasTocMarkers(filePath: string): boolean {
 }
 
 /**
+ * Decides whether the doctoc step needs to run for a given source file.
+ *
+ * @param options - Converter options carrying the `--force-doctoc` flag.
+ * @param sourceFile - Absolute path to the source Markdown file.
+ * @returns `true` when doctoc must process the file, `false` otherwise.
+ */
+export function shouldRunDoctoc(options: ConverterOptions, sourceFile: string): boolean {
+  return options.forceDoctoc || hasTocMarkers(sourceFile);
+}
+
+/**
  * Refreshes or creates a table of contents for the conversion input.
  *
  * The source Markdown is updated only when `--update-md-toc` is set and
- * doctoc markers already exist in the original file.
+ * doctoc markers already exist in the original file. Callers should gate
+ * this step with {@link shouldRunDoctoc}.
  *
  * @param context - Mutable conversion state for the current source file.
  */
 export function runDoctoc(context: ConversionContext): void {
   const sourceHasToc = hasTocMarkers(context.sourceFile);
-  const shouldRun = context.options.forceDoctoc || sourceHasToc;
-  if (!shouldRun) {
-    return;
-  }
 
   if (context.options.updateMdToc && sourceHasToc) {
     runNpx([context.options.packages.doctoc, context.sourceFile], { verbose: context.options.verbose });

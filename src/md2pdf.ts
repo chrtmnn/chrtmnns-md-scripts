@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { program } from 'commander';
 import { cleanup } from './steps/cleanup';
 import { copyOutput } from './steps/copy-output';
-import { createStylesheet } from './steps/create-stylesheet';
+import { resolveStylesheet } from './steps/resolve-stylesheet';
 import { extractTitle } from './steps/extract-title';
 import { prepareWorkdir } from './steps/prepare-workdir';
-import { renderMermaid } from './steps/render-mermaid';
+import { hasMermaidFences, renderMermaid } from './steps/render-mermaid';
 import { renderPdf } from './steps/render-pdf';
 import { resolveOptions, collect } from './steps/resolve-options';
-import { runDoctoc } from './steps/run-doctoc';
+import { runDoctoc, shouldRunDoctoc } from './steps/run-doctoc';
 import { ConverterOptions } from './types';
 
 program
@@ -75,37 +77,57 @@ async function run(options: ConverterOptions): Promise<void> {
 
   intro('md2pdf');
 
+  // Resolve the effective stylesheet once for all files.
+  const cssTempDir = options.cssVars.length > 0
+    ? fs.mkdtempSync(path.join(os.tmpdir(), 'md2pdf_css_'))
+    : undefined;
+
   let convertedCount = 0;
   let failedCount = 0;
 
-  for (const file of program.args) {
-    log.info(path.resolve(file));
+  try {
+    const effectiveStylesheet = resolveStylesheet(options, cssTempDir ?? os.tmpdir());
 
-    const context = runStep('Preparing workspace', () => prepareWorkdir(file, options));
-    if (!context) {
-      log.warn(`Skipped missing file: ${file}`);
-      failedCount++;
-      continue;
-    }
+    for (const file of program.args) {
+      log.info(path.resolve(file));
 
-    try {
-      runStep('Table of contents', () => runDoctoc(context));
-      runStep('Extracting document title', () => extractTitle(context));
-      runStep('Rendering Mermaid diagrams', () => renderMermaid(context));
-      runStep('Preparing stylesheet', () => createStylesheet(context));
-      runStep('Rendering PDF', () => renderPdf(context));
-      runStep('Copying output', () => copyOutput(context));
-
-      log.success(`Created ${context.outputPdf}`);
-      convertedCount++;
-    } catch (error) {
-      log.error(formatError(error));
-      failedCount++;
-    } finally {
-      cleanup(context);
-      if (context.options.keepTemp) {
-        log.info(`Temp kept at ${context.workdir}`);
+      const context = runStep('Preparing workspace', () => prepareWorkdir(file, options));
+      if (!context) {
+        log.warn(`Skipped missing file: ${file}`);
+        failedCount++;
+        continue;
       }
+
+      context.effectiveStylesheet = effectiveStylesheet;
+
+      try {
+        if (shouldRunDoctoc(options, context.sourceFile)) {
+          runStep('Table of contents', () => runDoctoc(context));
+        }
+        runStep('Extracting document title', () => extractTitle(context));
+        if (hasMermaidFences(context.sourceFile)) {
+          runStep('Rendering Mermaid diagrams', () => renderMermaid(context));
+        } else {
+          fs.copyFileSync(context.inputMarkdown, context.convertedMarkdown);
+        }
+        runStep('Rendering PDF', () => renderPdf(context));
+        runStep('Copying output', () => copyOutput(context));
+
+        log.success(`Created ${context.outputPdf}`);
+        convertedCount++;
+      } catch (error) {
+        log.error(formatError(error));
+        failedCount++;
+      } finally {
+        cleanup(context);
+        if (context.options.keepTemp) {
+          log.info(`Temp kept at ${context.workdir}`);
+        }
+      }
+    }
+  } finally {
+    if (cssTempDir) {
+      fs.rmSync(cssTempDir, { recursive: true, force: true });
     }
   }
 
