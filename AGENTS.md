@@ -2,6 +2,28 @@
 
 This file provides guidance to AI Agents when working with code in this repository.
 
+## Workflow
+
+`main` stays in a runnable state. Every change goes through a short-lived branch.
+
+**Branch naming**: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `refactor/<topic>`.
+
+**Per change**:
+
+1. `git checkout -b feat/<topic>`
+2. Commit work in focused commits (see git-commit skill for message policy)
+3. `git push -u origin feat/<topic>`
+4. `gh pr create` — the template prompts for what / why / verification
+5. Wait for the `typecheck` GitHub Action to pass
+6. Merge via squash on GitHub
+7. `git checkout main && git pull && git branch -d feat/<topic>`
+
+**Per release**:
+
+1. Bump `version` in `package.json` on `main`
+2. `git tag -a v<x.y.z> -m "<summary>"`
+3. `git push --tags`
+
 ## Commands
 
 ```bash
