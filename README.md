@@ -8,6 +8,19 @@ md2pdf README.md
 
 The command shows a compact progress view, refreshes an existing doctoc table of contents on a temporary copy, renders Mermaid diagrams, and writes a PDF next to the Markdown file unless another output directory is configured.
 
+## Table of Contents
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Installation](#installation)
+- [Usage](#usage)
+- [Options](#options)
+- [Uninstall](#uninstall)
+- [Mermaid Diagram Syntax](#mermaid-diagram-syntax)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Installation
 
 Prerequisites:
@@ -78,8 +91,8 @@ md2pdf --verbose README.md
 | `-o, --output-dir <dir>`  | Output directory for PDFs. Defaults to each Markdown file's directory.                                    |
 | `-r, --temp-root <dir>`   | Root directory for temporary work dirs. Defaults to the system temp directory.                            |
 | `-p, --temp-in-output`    | Place the temporary work dir inside the output directory.                                                 |
-| `-f, --force-doctoc`      | Create or refresh a TOC on the temporary conversion copy, even without source TOC markers.                 |
-| `-u, --update-md-toc`     | Update an existing doctoc TOC in the original Markdown file. Does not create a new source TOC.             |
+| `-f, --force-doctoc`      | Create or refresh a TOC on the temporary conversion copy, even without source TOC markers.                |
+| `-u, --update-md-toc`     | Update an existing doctoc TOC in the original Markdown file. Does not create a new source TOC.            |
 | `-k, --keep-temp`         | Keep the temporary work directory and print its path.                                                     |
 | `--verbose`               | Print output from doctoc, mermaid-cli, and md-to-pdf while they run.                                      |
 | `-h, --help`              | Show help.                                                                                                |
@@ -96,7 +109,9 @@ Restart your terminal afterwards.
 
 ## Mermaid Diagram Syntax
 
-Mermaid code fences are rendered automatically during conversion. For further information visit https://mermaid.js.org/intro/syntax-reference.html.
+Mermaid code fences are rendered automatically during conversion.
+
+> For further information visit https://mermaid.js.org/intro/syntax-reference.html.
 
 **Markdown input**:
 
@@ -111,7 +126,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  A[Markdown file] --> B[Table of Contents]
-  B --> C[Render diagrams]
-  C --> D[PDF output]
+    A[Markdown file] --> B[Table of Contents]
+    B --> C[Render diagrams]
+    C --> D[PDF output]
 ```

@@ -91,6 +91,8 @@ The `-k` flag preserves the temp dir for debugging.
 | `--first-heading-page-break-before` | `auto` | Suppresses break before the first h1/h2 |
 | `--font-text` | `"Aptos"` | Body font |
 | `--font-code` | `"JetBrains Mono"` | Code font |
+| `--page-margin-top` / `-right` / `-bottom` / `-left` | `2cm` / `2cm` / `2cm` / `2.5cm` | Individual page margins (A4) |
+| `--page-margin` | composed from the four individual margins | Shorthand to set all four margins at once |
 
 To disable per-heading page breaks: `--css-var heading-page-break-before=auto --css-var heading-break-before=auto`.
 
