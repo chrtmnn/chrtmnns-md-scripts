@@ -51,6 +51,8 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
     targetDir,
     outputPdf: path.join(targetDir, `${stem}.pdf`),
     tempPdf: path.join(workdir, `${stem}_converted.pdf`),
+    outputHtml: path.join(targetDir, `${stem}.html`),
+    tempHtml: path.join(workdir, `${stem}_converted.html`),
     docTitle: stem,
   };
 }

@@ -19,6 +19,7 @@
 
     /* font */
     --font-text: "Aptos";
+    --font-size: 11pt;
     --font-code: "JetBrains Mono", "Fira Code";
 
     /* heading page breaks */
@@ -28,10 +29,10 @@
     --first-heading-break-before: auto;
 
     /* page margins (top right bottom left) */
-    --page-margin-top: 2cm;
-    --page-margin-right: 2cm;
-    --page-margin-bottom: 2cm;
-    --page-margin-left: 2.5cm;
+    --page-margin-top: 1.6cm;
+    --page-margin-right: 1.6cm;
+    --page-margin-bottom: 1.6cm;
+    --page-margin-left: 2.4cm;
     --page-margin: var(--page-margin-top) var(--page-margin-right) var(--page-margin-bottom) var(--page-margin-left);
 }
 
@@ -49,7 +50,7 @@
 }
 
 html {
-    font-size: 11pt;
+    font-size: var(--font-size);
 }
 
 body {
@@ -186,14 +187,15 @@ pre {
     background: var(--color-code-bg);
     color: var(--color-code-text);
     border: 1px solid var(--color-border);
-    padding: 0;
+    padding: 0.15em 0.35em;
     border-radius: 4px;
     overflow-x: auto;
-    margin: 1em 0;
+    margin: 0.9em 0;
     page-break-inside: avoid;
 }
 
-pre code {
+pre code,
+pre code.hljs:nth-child(n) /* override highlight.js */ {
     background: none;
     padding: 0;
 }
@@ -291,7 +293,9 @@ hr {
    ========================= */
 
 .page-break {
+    display: block;
     page-break-before: always;
+    break-before: page;
 }
 
 /* =========================

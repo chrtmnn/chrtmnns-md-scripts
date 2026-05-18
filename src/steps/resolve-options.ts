@@ -13,6 +13,7 @@ type RawOptions = {
   updateMdToc?: boolean;
   keepTemp?: boolean;
   verbose?: boolean;
+  debug?: boolean;
 };
 
 /**
@@ -57,6 +58,7 @@ export function resolveOptions(program: Command): ConverterOptions {
     updateMdToc: Boolean(rawOptions.updateMdToc),
     keepTemp: Boolean(rawOptions.keepTemp),
     verbose: Boolean(rawOptions.verbose),
+    debug: Boolean(rawOptions.debug),
     packages: {
       doctoc: process.env.DOCTOC_PKG || 'doctoc@2.3.0',
       mermaidCli: process.env.MERMAID_CLI_PKG || '@mermaid-js/mermaid-cli@11.12.0',

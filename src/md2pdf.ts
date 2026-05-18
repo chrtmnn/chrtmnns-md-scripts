@@ -10,6 +10,7 @@ import { resolveStylesheet } from './steps/resolve-stylesheet';
 import { extractTitle } from './steps/extract-title';
 import { prepareWorkdir } from './steps/prepare-workdir';
 import { hasMermaidFences, renderMermaid } from './steps/render-mermaid';
+import { renderHtml } from './steps/render-html';
 import { renderPdf } from './steps/render-pdf';
 import { resolveOptions, collect } from './steps/resolve-options';
 import { runDoctoc, shouldRunDoctoc } from './steps/run-doctoc';
@@ -28,6 +29,7 @@ program
   .option('-u, --update-md-toc', 'Update an existing doctoc table of contents in the source Markdown')
   .option('-k, --keep-temp', 'Keep temp working directory')
   .option('--verbose', 'Print output from external conversion tools')
+  .option('--debug', 'Also emit a standalone HTML file next to the PDF')
   .parse(process.argv);
 
 if (program.args.length === 0) {
@@ -111,9 +113,15 @@ async function run(options: ConverterOptions): Promise<void> {
           fs.copyFileSync(context.inputMarkdown, context.convertedMarkdown);
         }
         runStep('Rendering PDF', () => renderPdf(context));
+        if (options.debug) {
+          runStep('Rendering debug HTML', () => renderHtml(context));
+        }
         runStep('Copying output', () => copyOutput(context));
 
         log.success(`Created ${context.outputPdf}`);
+        if (options.debug) {
+          log.success(`Created ${context.outputHtml}`);
+        }
         convertedCount++;
       } catch (error) {
         log.error(formatError(error));

@@ -66,6 +66,7 @@ All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContex
 | `convertedMarkdown` | `prepareWorkdir` | Output of mermaid-cli, input to md-to-pdf |
 | `docTitle` | `extractTitle` | `--document-title` passed to md-to-pdf |
 | `effectiveStylesheet` | `createStylesheet` | Final CSS path (base or merged with overrides) |
+| `tempHtml` / `outputHtml` | `prepareWorkdir` | Debug HTML paths; populated by `renderHtml` and `copyOutput` only when `--debug` is set |
 
 ### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
 

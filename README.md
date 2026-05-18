@@ -17,7 +17,10 @@ The command shows a compact progress view, refreshes an existing doctoc table of
 - [Usage](#usage)
 - [Options](#options)
 - [Uninstall](#uninstall)
-- [Mermaid Diagram Syntax](#mermaid-diagram-syntax)
+- [Additional usage information](#additional-usage-information)
+  - [Manual Page Breaks](#manual-page-breaks)
+  - [Table of Contents Markers](#table-of-contents-markers)
+  - [Mermaid Diagram Syntax](#mermaid-diagram-syntax)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -80,9 +83,15 @@ Show output from the underlying conversion tools:
 md2pdf --verbose README.md
 ```
 
+Also emit an HTML file next to the PDF for inspection:
+
+```powershell
+md2pdf --debug README.md
+```
+
 ## Options
 
-`md2pdf [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [--verbose] [files...]`
+`md2pdf [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [--verbose] [--debug] [files...]`
 
 | option                    | description                                                                                               |
 |---------------------------|-----------------------------------------------------------------------------------------------------------|
@@ -95,6 +104,7 @@ md2pdf --verbose README.md
 | `-u, --update-md-toc`     | Update an existing doctoc TOC in the original Markdown file. Does not create a new source TOC.            |
 | `-k, --keep-temp`         | Keep the temporary work directory and print its path.                                                     |
 | `--verbose`               | Print output from doctoc, mermaid-cli, and md-to-pdf while they run.                                      |
+| `--debug`                 | Also write a standalone HTML file next to the PDF using the same stylesheet.                              |
 | `-h, --help`              | Show help.                                                                                                |
 
 ## Uninstall
@@ -107,7 +117,40 @@ Remove the wrapper from your user `PATH`:
 
 Restart your terminal afterwards.
 
-## Mermaid Diagram Syntax
+---
+
+<div class="page-break"></div>
+
+## Additional usage information
+
+### Manual Page Breaks
+
+The default stylesheet exposes a `.page-break` helper that forces a page break before the element it is applied to. Insert an empty HTML element with the class wherever the next page should start — any of these work:
+
+```markdown
+<i class="page-break"></i>
+<span class="page-break"></span>
+<div class="page-break"></div>
+```
+
+The helper sets `display: block` internally, so inline elements work too. The marker is invisible in the rendered PDF and is ignored by Markdown viewers that do not honour the class.
+
+### Table of Contents Markers
+
+`md2pdf` refreshes a TOC automatically when the source Markdown contains a doctoc marker block. Add the following block once at the location where the TOC should appear:
+
+```markdown
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+```
+
+On the next conversion, doctoc fills the block with the current heading structure. Subsequent runs keep the block in place and update its content.
+
+If the source Markdown does not yet contain the marker block, pass `-f` once to let doctoc insert the block at the top of the temporary conversion copy.
+
+To also write the refreshed TOC back into the original Markdown file (instead of only into the temporary conversion copy), combine `-u` with an existing marker block.
+
+### Mermaid Diagram Syntax
 
 Mermaid code fences are rendered automatically during conversion.
 
