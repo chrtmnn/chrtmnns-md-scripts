@@ -30,6 +30,8 @@ export type ConverterOptions = {
   keepTemp: boolean;
   /** Whether external tool output should be printed while commands run. */
   verbose: boolean;
+  /** Whether md-to-pdf should also emit an HTML file alongside the PDF. */
+  debug: boolean;
   /** Package selectors used for external npx invocations. */
   packages: {
     doctoc: string;
@@ -64,6 +66,10 @@ export type ConversionContext = {
   outputPdf: string;
   /** PDF path expected from md-to-pdf inside the temporary work directory. */
   tempPdf: string;
+  /** Final debug HTML path visible to the caller, used when --debug is set. */
+  outputHtml: string;
+  /** HTML path expected from md-to-pdf inside the temporary work directory. */
+  tempHtml: string;
   /** Stylesheet path actually passed to md-to-pdf after applying overrides. */
   effectiveStylesheet?: string;
   /** Document title passed to md-to-pdf. */
