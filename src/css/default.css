@@ -26,11 +26,18 @@
     --heading-break-before: page;
     --first-heading-page-break-before: auto;
     --first-heading-break-before: auto;
+
+    /* page margins (top right bottom left) */
+    --page-margin-top: 2cm;
+    --page-margin-right: 2cm;
+    --page-margin-bottom: 2cm;
+    --page-margin-left: 2.5cm;
+    --page-margin: var(--page-margin-top) var(--page-margin-right) var(--page-margin-bottom) var(--page-margin-left);
 }
 
 @page {
     size: A4;
-    margin: 2cm 2cm 2cm 2.5cm;
+    margin: var(--page-margin);
 }
 
 @page {
@@ -253,7 +260,8 @@ tr:nth-child(even) td {
 
 img {
     max-width: 100%;
-    max-height: calc(100vh - 2em);
+    /* 2em for headings */
+    max-height: calc(100vh - var(--page-margin-top) - var(--page-margin-bottom) - 2em);
     width: auto;
     height: auto;
     object-fit: contain;
@@ -274,7 +282,7 @@ p:has(> img:only-child) {
 
 hr {
     border: none;
-    border-top: 1px solid var(--color-border);
+    border-top: 2px solid var(--color-border);
     margin: 2em 0;
 }
 
