@@ -11,7 +11,7 @@ type RunNpxOptions = {
  * @param options - Output handling options for the external command.
  */
 export function runNpx(args: string[], options: RunNpxOptions): void {
-  const command = ['npx', ...args].map(quoteShellArg).join(' ');
+  const command = ['npx', ...args.map(quoteShellArg)].join(' ');
 
   try {
     execSync(command, {
