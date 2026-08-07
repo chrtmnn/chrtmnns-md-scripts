@@ -6,6 +6,8 @@ import path from 'path';
 import { program } from 'commander';
 import { cleanup } from './steps/cleanup';
 import { copyOutput } from './steps/copy-output';
+import { MergedInput, mergeMarkdown } from './steps/merge-markdown';
+import { resolveInputs } from './steps/resolve-inputs';
 import { resolveStylesheet } from './steps/resolve-stylesheet';
 import { extractTitle } from './steps/extract-title';
 import { prepareWorkdir } from './steps/prepare-workdir';
@@ -19,7 +21,9 @@ import { ConverterOptions } from './types';
 program
   .name('md2pdf')
   .description('Render Mermaid diagrams and convert Markdown to PDF')
-  .argument('[files...]', 'Markdown files to convert')
+  .argument('[files...]', 'Markdown files or directories to convert')
+  .option('-R, --recursive', 'Expand directory arguments recursively')
+  .option('--merge <name>', 'Merge all resolved Markdown files into a single PDF with this base name')
   .option('-s, --stylesheet <path>', 'Stylesheet passed to md-to-pdf')
   .option('--css-var <name=value>', 'Override a CSS custom property, repeatable', collect, [])
   .option('-o, --output-dir <path>', 'Output directory for PDFs')
@@ -80,6 +84,38 @@ async function run(options: ConverterOptions): Promise<void> {
 
   intro('md2pdf');
 
+  // Positional arguments may be files or directories; expand them into the
+  // concrete list of Markdown files before anything else runs.
+  const inputs = runStep('Resolving input files', () => resolveInputs(program.args, options));
+  inputs.warnings.forEach((warning) => log.warn(warning));
+
+  // `--merge` concatenates the resolved Markdown before rendering and then
+  // feeds the pipeline a single file, so every other flag keeps working
+  // unchanged and doctoc produces one TOC spanning all documents.
+  let merged: MergedInput | undefined;
+  let runOptions = options;
+  let filesToConvert = inputs.files;
+  let skippedCount = 0;
+
+  if (options.merge) {
+    if (inputs.files.length === 0) {
+      log.error('Nothing to merge: no Markdown files were resolved from the given arguments.');
+      outro('Merge failed');
+      process.exit(1);
+    }
+
+    merged = runStep('Merging Markdown files', () => mergeMarkdown(inputs.files, options));
+    merged.warnings.forEach((warning) => log.warn(warning));
+    merged.skipped.forEach((file) => log.warn(`Skipped missing file: ${file}`));
+    skippedCount = merged.skipped.length;
+    filesToConvert = [merged.mergedFile];
+
+    // The merged file lives in a temp directory, so the target directory has
+    // to be pinned explicitly instead of being derived from its location:
+    // `-o` when given, otherwise the common ancestor of the inputs.
+    runOptions = { ...options, outputDir: merged.targetDir };
+  }
+
   // Resolve the effective stylesheet once for all files.
   const cssTempDir = options.cssVars.length > 0
     ? fs.mkdtempSync(path.join(os.tmpdir(), 'md2pdf_css_'))
@@ -91,10 +127,10 @@ async function run(options: ConverterOptions): Promise<void> {
   try {
     const effectiveStylesheet = resolveStylesheet(options, cssTempDir ?? os.tmpdir());
 
-    for (const file of program.args) {
-      log.info(path.resolve(file));
+    for (const file of filesToConvert) {
+      log.info(merged ? `${merged.mergedCount} documents merged` : path.resolve(file));
 
-      const context = runStep('Preparing workspace', () => prepareWorkdir(file, options));
+      const context = runStep('Preparing workspace', () => prepareWorkdir(file, runOptions));
       if (!context) {
         log.warn(`Skipped missing file: ${file}`);
         failedCount++;
@@ -107,7 +143,11 @@ async function run(options: ConverterOptions): Promise<void> {
         if (shouldRunDoctoc(options, context.sourceFile)) {
           runStep('Table of contents', () => runDoctoc(context));
         }
-        runStep('Extracting document title', () => extractTitle(context));
+        if (!merged) {
+          // A merged run keeps the `--merge` name as its document title,
+          // which prepareWorkdir already derived from the merged file name.
+          runStep('Extracting document title', () => extractTitle(context));
+        }
         if (hasMermaidFences(context.sourceFile)) {
           runStep('Rendering Mermaid diagrams', () => renderMermaid(context));
         } else {
@@ -138,6 +178,30 @@ async function run(options: ConverterOptions): Promise<void> {
     if (cssTempDir) {
       fs.rmSync(cssTempDir, { recursive: true, force: true });
     }
+
+    if (merged) {
+      if (options.keepTemp) {
+        log.info(`Merged Markdown kept at ${merged.mergedFile}`);
+      } else {
+        fs.rmSync(merged.mergeDir, { recursive: true, force: true });
+      }
+    }
+  }
+
+  if (merged) {
+    if (convertedCount === 0) {
+      outro('Merge failed');
+      process.exit(1);
+    }
+
+    const mergedPdf = `${options.merge}.pdf`;
+    if (skippedCount > 0) {
+      outro(`${merged.mergedCount} merged into ${mergedPdf}, ${skippedCount} skipped`);
+      process.exit(1);
+    }
+
+    outro(`${merged.mergedCount} merged into ${mergedPdf}`);
+    return;
   }
 
   if (failedCount > 0) {

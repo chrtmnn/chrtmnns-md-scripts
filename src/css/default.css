@@ -28,6 +28,10 @@
     --first-heading-page-break-before: auto;
     --first-heading-break-before: auto;
 
+    /* separator between documents combined with --merge */
+    --document-page-break-before: always;
+    --document-break-before: page;
+
     /* page margins (top right bottom left) */
     --page-margin-top: 1.6cm;
     --page-margin-right: 1.6cm;
@@ -296,6 +300,16 @@ hr {
     display: block;
     page-break-before: always;
     break-before: page;
+}
+
+/* Inserted by --merge between two combined documents. Kept separate from
+   .page-break so a merged run can be flattened with
+   --css-var document-page-break-before=auto --css-var document-break-before=auto
+   without disabling manual page breaks. */
+.document-break {
+    display: block;
+    page-break-before: var(--document-page-break-before);
+    break-before: var(--document-break-before);
 }
 
 /* =========================
