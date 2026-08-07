@@ -14,6 +14,7 @@ type RawOptions = {
   keepTemp?: boolean;
   verbose?: boolean;
   debug?: boolean;
+  png?: boolean;
 };
 
 /**
@@ -59,6 +60,7 @@ export function resolveOptions(program: Command): ConverterOptions {
     keepTemp: Boolean(rawOptions.keepTemp),
     verbose: Boolean(rawOptions.verbose),
     debug: Boolean(rawOptions.debug),
+    png: Boolean(rawOptions.png),
     packages: {
       doctoc: process.env.DOCTOC_PKG || 'doctoc@2.3.0',
       mermaidCli: process.env.MERMAID_CLI_PKG || '@mermaid-js/mermaid-cli@11.12.0',

@@ -32,6 +32,8 @@ export type ConverterOptions = {
   verbose: boolean;
   /** Whether md-to-pdf should also emit an HTML file alongside the PDF. */
   debug: boolean;
+  /** Whether Mermaid diagrams should be rendered as PNG instead of the default SVG. */
+  png: boolean;
   /** Package selectors used for external npx invocations. */
   packages: {
     doctoc: string;

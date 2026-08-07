@@ -30,6 +30,7 @@ program
   .option('-k, --keep-temp', 'Keep temp working directory')
   .option('--verbose', 'Print output from external conversion tools')
   .option('--debug', 'Also emit a standalone HTML file next to the PDF')
+  .option('--png', 'Render Mermaid diagrams as PNG instead of SVG')
   .parse(process.argv);
 
 if (program.args.length === 0) {
