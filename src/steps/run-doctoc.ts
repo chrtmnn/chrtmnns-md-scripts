@@ -257,6 +257,32 @@ function insertBlockBeforeIndex(lines: string[], block: string[], h2Idx: number)
 }
 
 /**
+ * Detects a leading YAML frontmatter block (as supported by md-to-pdf's
+ * underlying front-matter parser): the very first line must be exactly
+ * `---` (no leading indentation, trailing whitespace allowed), closed by a
+ * later line that is exactly `---` or `...`.
+ *
+ * @param lines - Document lines, without line terminators.
+ * @returns The index of the closing delimiter line, or `-1` when the
+ *   document has no leading frontmatter block (including the degenerate
+ *   case of an unterminated leading `---`, which is treated as no
+ *   frontmatter rather than swallowing the rest of the file).
+ */
+function findFrontmatterEnd(lines: string[]): number {
+  if (lines.length === 0 || !/^---[ \t]*$/.test(lines[0])) {
+    return -1;
+  }
+
+  for (let i = 1; i < lines.length; i++) {
+    if (/^(?:---|\.\.\.)[ \t]*$/.test(lines[i])) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+/**
  * Relocates a freshly created doctoc block so it sits directly before the
  * first second-order (`##`) heading in the file, instead of wherever
  * doctoc's own default placement chose (by default, near the top of the
@@ -264,6 +290,12 @@ function insertBlockBeforeIndex(lines: string[], block: string[], h2Idx: number)
  * heading exists anywhere in the document (doctoc's placement is left
  * untouched), or when the block is already directly before the first `##`
  * heading (the file is left byte-identical).
+ *
+ * A leading YAML frontmatter block (see {@link findFrontmatterEnd}) is
+ * treated as opaque: it is excluded from the heading scan and the TOC
+ * block is never inserted at or before its closing delimiter, even if a
+ * frontmatter value line is immediately followed by a line of dashes that
+ * would otherwise look like a setext heading underline.
  *
  * Only ever rewrites `filePath` in place; callers must only pass the temp
  * copy (`context.inputMarkdown`), never the user's source file.
@@ -292,12 +324,21 @@ function relocateTocBeforeFirstH2(filePath: string): void {
 
   const { withoutBlock, block } = removeBlockCollapsingSeam(lines, startIdx, endIdx);
 
-  const h2Idx = findFirstH2Index(withoutBlock);
-  if (h2Idx === -1) {
-    // No `##`-equivalent heading anywhere in the document: leave doctoc's
-    // own placement untouched.
+  // Frontmatter detection runs on `withoutBlock` (post-removal), so it
+  // stays correct even if doctoc's block had ended up inside or right
+  // after the frontmatter: removal never shifts the leading lines, so the
+  // frontmatter's own indices are unaffected either way.
+  const frontmatterEnd = findFrontmatterEnd(withoutBlock);
+  const searchStart = frontmatterEnd === -1 ? 0 : frontmatterEnd + 1;
+
+  const relativeH2Idx = findFirstH2Index(withoutBlock.slice(searchStart));
+  if (relativeH2Idx === -1) {
+    // No `##`-equivalent heading anywhere in the searchable region (either
+    // no such heading exists, or the document is frontmatter-only): leave
+    // doctoc's own placement untouched.
     return;
   }
+  const h2Idx = searchStart + relativeH2Idx;
 
   const finalLines = insertBlockBeforeIndex(withoutBlock, block, h2Idx);
   const finalContent = finalLines.join(eol) + (hadTrailingNewline ? eol : '');
