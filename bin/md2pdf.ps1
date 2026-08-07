@@ -2,7 +2,39 @@
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $InvocationDirectory = (Get-Location).Path
-$CliArgs = $args
+
+# PowerShell does not unroll a parenthesized array expression such as
+# `md2pdf (Get-ChildItem *.md).Name` into separate positional arguments: the whole
+# array arrives as a single element of $args. Flatten it so the parsing loop below
+# always sees plain strings.
+function ConvertTo-FlatArgumentList {
+    param([object[]]$Arguments)
+
+    $flat = New-Object System.Collections.Generic.List[string]
+    foreach ($item in $Arguments) {
+        if ($null -eq $item) {
+            continue
+        }
+
+        if ($item -is [string]) {
+            $flat.Add($item)
+            continue
+        }
+
+        if ($item -is [System.Collections.IEnumerable]) {
+            foreach ($nested in (ConvertTo-FlatArgumentList -Arguments @($item))) {
+                $flat.Add($nested)
+            }
+            continue
+        }
+
+        $flat.Add([string]$item)
+    }
+
+    return ,$flat.ToArray()
+}
+
+$CliArgs = ConvertTo-FlatArgumentList -Arguments $args
 
 $pathValueOptions = @{
     "-s" = $true
@@ -49,7 +81,7 @@ for ($index = 0; $index -lt $CliArgs.Count; $index++) {
     $inlinePathOption = $false
     foreach ($option in $pathValueOptions.Keys) {
         $prefix = "$option="
-        if ($arg.StartsWith($prefix)) {
+        if ($arg.StartsWith($prefix, [System.StringComparison]::Ordinal)) {
             $value = $arg.Substring($prefix.Length)
             $resolvedArgs.Add("$option=$(Resolve-ArgumentPath $value)")
             $inlinePathOption = $true
@@ -85,7 +117,7 @@ for ($index = 0; $index -lt $CliArgs.Count; $index++) {
         continue
     }
 
-    if ($arg.StartsWith("-")) {
+    if ($arg.StartsWith("-", [System.StringComparison]::Ordinal)) {
         $resolvedArgs.Add($arg)
         continue
     }

@@ -112,3 +112,5 @@ All three sub-tools are invoked via `npx` through `runNpx` (`src/steps/run-npx.t
 `bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to `pnpm --silent md2pdf`. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `install.ps1`; remove via `uninstall.ps1`.
 
 The wrapper classifies each CLI argument before forwarding it: path options (`-s`, `-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`--css-var`) have their value forwarded verbatim; flags and positional arguments are resolved as paths or passed as-is.
+
+Before classification, `$args` is flattened by `ConvertTo-FlatArgumentList`. PowerShell passes a parenthesized array expression (`md2pdf (Get-ChildItem *.md).Name`) as a *single* array-valued argument instead of unrolling it, which would otherwise break the string-based parsing loop.
