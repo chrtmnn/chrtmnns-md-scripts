@@ -23,8 +23,8 @@
     --font-code: "JetBrains Mono", "Fira Code";
 
     /* heading page breaks */
-    --heading-page-break-before: always;
-    --heading-break-before: page;
+    --heading-page-break-before: auto;
+    --heading-break-before: auto;
     --first-heading-page-break-before: auto;
     --first-heading-break-before: auto;
 
