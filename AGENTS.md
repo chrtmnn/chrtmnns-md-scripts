@@ -128,6 +128,8 @@ A side effect worth knowing: the `--debug` HTML is now self-contained, so it ren
 
 `src/css/default.css` defines all CSS custom properties. `--css-var name=value` (repeatable, leading `--` optional) injects overrides into a `:root {}` block appended to the base stylesheet in a merged temp file (`style-overrides.css`). Key properties:
 
+md-to-pdf never references `--stylesheet` by path in the rendered page — it reads the file and injects its text into an inline `<style>` tag (puppeteer's `page.addStyleTag({ path })`), so any relative `@import` or `url()` in the base stylesheet would resolve against the page's own location (the `--basedir` HTTP server), not the stylesheet's directory on disk, regardless of where the merged file is written. `resolveStylesheet` (`src/steps/resolve-stylesheet.ts`) therefore makes the merged stylesheet fully self-contained before writing it out: local `@import` targets are inlined recursively (each resolved against its own file's directory, with diamond imports allowed and circular imports rejected), and local `url()` targets are rewritten to `data:` URIs. Remote (`http(s):`) references and existing `data:` URIs are left untouched.
+
 | Variable | Default | Effect |
 |---|---|---|
 | `--heading-page-break-before` | `auto` | Page break before h1/h2 |
