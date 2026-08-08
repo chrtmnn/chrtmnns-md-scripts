@@ -14,7 +14,7 @@ This file provides guidance to AI Agents when working with code in this reposito
 2. Commit work in focused commits (see git-commit skill for message policy)
 3. `git push -u origin feat/<topic>`
 4. `gh pr create` — the template prompts for what / why / verification
-5. Wait for the `typecheck` GitHub Action to pass
+5. Wait for the `typecheck` and `test` GitHub Action checks to pass
 6. Merge via squash on GitHub
 7. `git checkout main && git pull && git branch -d feat/<topic>`
 
@@ -27,9 +27,10 @@ This file provides guidance to AI Agents when working with code in this reposito
 ## Commands
 
 ```bash
-pnpm typecheck          # TypeScript type-check (no emit)
+pnpm typecheck          # TypeScript type-check (no emit), test files included
+pnpm test               # Automated unit tests (node:test), this is what CI runs
 pnpm md2pdf [options] [files...]   # Full pipeline: TOC → Mermaid → PDF
-pnpm test               # Manual smoke test of md2pdf with CSS overrides
+pnpm smoke              # Manual smoke test of md2pdf with CSS overrides
 ```
 
 Run a single tool directly with tsx:
@@ -37,7 +38,32 @@ Run a single tool directly with tsx:
 npx tsx src/md2pdf.ts --help
 ```
 
-There is no automated test suite beyond the manual `test` script.
+### Tests
+
+The unit tests live in `src/test/*.test.ts` and run on Node's built-in
+`node:test` runner with `node:assert`, through tsx as an ESM loader
+(`node --import tsx --test`). No test framework is a dependency. They are
+inside `src/` so `tsconfig.json` (`rootDir: src`) type-checks them along with
+everything else — `pnpm typecheck` covers the tests too.
+
+`src/test/helpers.ts` holds the fixture helpers: every test writes into its own
+`fs.mkdtempSync` directory that is removed by a `t.after` hook, so a run never
+leaves files in the repository.
+
+Scope: the pure logic only. Steps that shell out through `runNpx` (doctoc,
+mermaid-cli, md-to-pdf) are not covered — the tests must stay fast and must not
+need the network or Chromium. Tests that need a symbolic link skip themselves
+via `t.skip()` when the platform refuses to create one (Windows needs Developer
+Mode or elevation); the Windows-junction test skips on other platforms.
+
+**Convention for testable helpers**: pure logic that deserves tests moves into
+its own module rather than being `export`ed out of a file that also does I/O.
+`markdown-scan.ts` (scanning primitives, out of `run-doctoc.ts`),
+`toc-placement.ts` (TOC relocation rules, out of `run-doctoc.ts`),
+`merge-assembly.ts` (concatenation and common-ancestor computation, out of
+`merge-markdown.ts`) and `option-values.ts` (`--css-var` / `--merge`
+validation, out of `resolve-options.ts`) all follow that split: the step file
+keeps the filesystem work, the extracted module keeps the rules.
 
 ## Architecture
 
@@ -93,12 +119,13 @@ Positional arguments may be files or directories. A file positional is kept as-i
 - The merge temp directory follows the same `-r` / `-p` placement rules as the conversion work directory and is removed unless `-k` is set.
 - Relative **image** targets are rewritten to absolute paths as each document is read, against that document's own directory. Concatenation is the last point at which a section's origin is still known, and `inlineAssets` embeds those absolute paths afterwards. Two documents in different directories can therefore both use `images/logo.png` and each still gets its own file.
 - **Limitation**: relative **link** targets are not rewritten. Links are not fetched during rendering, so a relative link between merged documents stays relative and may not point anywhere useful in the PDF. The warning emitted when the inputs span more than one directory says so.
+- The pure parts — BOM stripping, the common-ancestor computation, and the concatenation itself — live in `src/steps/merge-assembly.ts`; `merge-markdown.ts` keeps the filesystem work.
 
 ### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
 
 `runDoctoc` runs automatically when the source file contains `<!-- START doctoc generated TOC`. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. By default, doctoc runs on a temp copy. The `-u`/`--update-md-toc` flag also updates the original Markdown file when it already has doctoc markers.
 
-When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--force-doctoc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings inside fenced code blocks (` ``` `/`~~~`) are ignored when locating the target position. If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. This relocation is implemented by the non-exported `relocateTocBeforeFirstH2` helper in `run-doctoc.ts`.
+When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--force-doctoc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings inside fenced code blocks (` ``` `/`~~~`) are ignored when locating the target position. If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. The relocation rules themselves are a pure string-to-string transformation in `src/steps/toc-placement.ts` (`relocateTocBeforeFirstH2`); `run-doctoc.ts` only applies them to the temp copy and writes the file back when the content actually changed.
 
 ### Temp directory strategy
 
