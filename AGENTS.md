@@ -102,7 +102,7 @@ When doctoc creates a **brand-new** TOC (no markers existed in the source file, 
 
 ### Temp directory strategy
 
-Each conversion creates an isolated temp directory (`stem_<8 random chars>`). Location:
+Each conversion creates an isolated temp directory via `fs.mkdtempSync(path.join(base, `${stem}_`))` (`stem_` followed by 6 random characters chosen by Node, e.g. `stem_aB3xQ9`). `mkdtempSync` creates the directory atomically, so a name collision fails loudly instead of two runs silently sharing a directory. Location:
 - Default: OS temp dir
 - `-r <root>`: custom root directory
 - `-p`: inside the output directory (or source dir if `-o` is absent)
