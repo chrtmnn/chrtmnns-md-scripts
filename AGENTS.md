@@ -72,6 +72,8 @@ All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContex
 
 `runDoctoc` runs automatically when the source file contains `<!-- START doctoc generated TOC`. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. By default, doctoc runs on a temp copy. The `-u`/`--update-md-toc` flag also updates the original Markdown file when it already has doctoc markers.
 
+When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--force-doctoc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings inside fenced code blocks (` ``` `/`~~~`) are ignored when locating the target position. If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. This relocation is implemented by the non-exported `relocateTocBeforeFirstH2` helper in `run-doctoc.ts`.
+
 ### Temp directory strategy
 
 Each conversion creates an isolated temp directory (`stem_<8 random chars>`). Location:
