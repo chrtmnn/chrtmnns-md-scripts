@@ -2,10 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { ConversionContext, ConverterOptions } from '../types';
 import { runNpx } from './run-npx';
-import { isBlank, findFirstH2Index, findFrontmatterEnd } from './markdown-scan';
-
-const DOCTOC_MARKER = '<!-- START doctoc generated TOC';
-const DOCTOC_END_MARKER = '<!-- END doctoc generated TOC please keep comment here to allow auto update -->';
+import { DOCTOC_MARKER, relocateTocBeforeFirstH2 } from './toc-placement';
 
 /**
  * Checks whether a Markdown file contains doctoc-managed TOC markers.
@@ -39,7 +36,9 @@ export function shouldRunDoctoc(options: ConverterOptions, sourceFile: string): 
  * file yet, i.e. the `--force-doctoc` case), the generated block is
  * relocated to sit directly before the first second-order (`##`) heading
  * in the temp copy. Refreshes of an already-existing TOC are left exactly
- * where doctoc put them.
+ * where doctoc put them. The placement rules themselves live in
+ * {@link relocateTocBeforeFirstH2}; this step only applies them to the temp
+ * copy, never to `context.sourceFile`.
  *
  * @param context - Mutable conversion state for the current source file.
  */
@@ -62,137 +61,25 @@ export function runDoctoc(context: ConversionContext): void {
   // copy, or on `context.sourceFile` above when `--update-md-toc` applies)
   // and it must not move. This never touches `context.sourceFile`.
   if (!sourceHasToc) {
-    relocateTocBeforeFirstH2(context.inputMarkdown);
+    relocateTocInFile(context.inputMarkdown);
   }
 }
 
 /**
- * Removes the doctoc block `[startIdx, endIdx]` from `lines`, collapsing
- * the blank-line seam left behind so the removal doesn't produce a doubled
- * blank line.
- *
- * @param lines - Full document lines, without line terminators.
- * @param startIdx - Index of the doctoc start-marker line.
- * @param endIdx - Index of the doctoc end-marker line.
- * @returns The document lines with the block removed, and the removed
- *   block itself.
- */
-function removeBlockCollapsingSeam(
-  lines: string[],
-  startIdx: number,
-  endIdx: number,
-): { withoutBlock: string[]; block: string[] } {
-  const block = lines.slice(startIdx, endIdx + 1);
-  let before = lines.slice(0, startIdx);
-  let after = lines.slice(endIdx + 1);
-
-  const hadBlankBefore = before.length > 0 && isBlank(before[before.length - 1]);
-  const hadBlankAfter = after.length > 0 && isBlank(after[0]);
-
-  while (before.length > 0 && isBlank(before[before.length - 1])) {
-    before.pop();
-  }
-  while (after.length > 0 && isBlank(after[0])) {
-    after.shift();
-  }
-
-  if (before.length > 0 && after.length > 0 && (hadBlankBefore || hadBlankAfter)) {
-    before = before.concat(['']);
-  }
-
-  return { withoutBlock: before.concat(after), block };
-}
-
-/**
- * Re-inserts the doctoc block directly before `lines[h2Idx]`, ensuring
- * exactly one blank line on each side of the block (no leading blank when
- * the block lands at the very top of the file).
- *
- * @param lines - Document lines with the doctoc block already removed.
- * @param block - The doctoc block lines to re-insert.
- * @param h2Idx - Index (within `lines`) of the first `##`-equivalent heading.
- * @returns The document lines with the block re-inserted.
- */
-function insertBlockBeforeIndex(lines: string[], block: string[], h2Idx: number): string[] {
-  const before = lines.slice(0, h2Idx);
-  const after = lines.slice(h2Idx);
-
-  while (before.length > 0 && isBlank(before[before.length - 1])) {
-    before.pop();
-  }
-
-  const result = [...before];
-  if (before.length > 0) {
-    result.push('');
-  }
-  result.push(...block);
-  result.push('');
-  result.push(...after);
-  return result;
-}
-
-/**
- * Relocates a freshly created doctoc block so it sits directly before the
- * first second-order (`##`) heading in the file, instead of wherever
- * doctoc's own default placement chose (by default, near the top of the
- * file). No-ops when the file has no doctoc block, when no `##`-equivalent
- * heading exists anywhere in the document (doctoc's placement is left
- * untouched), or when the block is already directly before the first `##`
- * heading (the file is left byte-identical).
- *
- * A leading YAML frontmatter block (see {@link findFrontmatterEnd}) is
- * treated as opaque: it is excluded from the heading scan and the TOC
- * block is never inserted at or before its closing delimiter, even if a
- * frontmatter value line is immediately followed by a line of dashes that
- * would otherwise look like a setext heading underline.
+ * Applies {@link relocateTocBeforeFirstH2} to a file in place, writing only
+ * when the relocation actually changed something so an already correctly
+ * placed TOC leaves the file byte-identical.
  *
  * Only ever rewrites `filePath` in place; callers must only pass the temp
  * copy (`context.inputMarkdown`), never the user's source file.
  *
  * @param filePath - Markdown file to rewrite in place.
  */
-function relocateTocBeforeFirstH2(filePath: string): void {
+function relocateTocInFile(filePath: string): void {
   const raw = fs.readFileSync(filePath, 'utf8');
-  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
-  const hadTrailingNewline = raw.endsWith('\n');
+  const relocated = relocateTocBeforeFirstH2(raw);
 
-  const lines = raw.split(/\r\n|\n/);
-  if (hadTrailingNewline) {
-    lines.pop();
-  }
-
-  const startIdx = lines.findIndex((line) => line.includes(DOCTOC_MARKER));
-  if (startIdx === -1) {
-    return;
-  }
-
-  const endIdx = lines.findIndex((line, i) => i >= startIdx && line.includes(DOCTOC_END_MARKER));
-  if (endIdx === -1) {
-    return;
-  }
-
-  const { withoutBlock, block } = removeBlockCollapsingSeam(lines, startIdx, endIdx);
-
-  // Frontmatter detection runs on `withoutBlock` (post-removal), so it
-  // stays correct even if doctoc's block had ended up inside or right
-  // after the frontmatter: removal never shifts the leading lines, so the
-  // frontmatter's own indices are unaffected either way.
-  const frontmatterEnd = findFrontmatterEnd(withoutBlock);
-  const searchStart = frontmatterEnd === -1 ? 0 : frontmatterEnd + 1;
-
-  const relativeH2Idx = findFirstH2Index(withoutBlock.slice(searchStart));
-  if (relativeH2Idx === -1) {
-    // No `##`-equivalent heading anywhere in the searchable region (either
-    // no such heading exists, or the document is frontmatter-only): leave
-    // doctoc's own placement untouched.
-    return;
-  }
-  const h2Idx = searchStart + relativeH2Idx;
-
-  const finalLines = insertBlockBeforeIndex(withoutBlock, block, h2Idx);
-  const finalContent = finalLines.join(eol) + (hadTrailingNewline ? eol : '');
-
-  if (finalContent !== raw) {
-    fs.writeFileSync(filePath, finalContent);
+  if (relocated !== raw) {
+    fs.writeFileSync(filePath, relocated);
   }
 }
