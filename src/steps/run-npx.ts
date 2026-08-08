@@ -1,20 +1,32 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import { existsSync } from 'fs';
+import path from 'path';
 
 type RunNpxOptions = {
   verbose: boolean;
 };
 
+type NpxInvocation = {
+  file: string;
+  leadingArgs: string[];
+};
+
+let cachedInvocation: NpxInvocation | undefined;
+
 /**
  * Runs an npx command with optional inherited stdio.
+ *
+ * Arguments are passed as an array and the child process is spawned without a
+ * shell, so no value is ever reinterpreted by `cmd.exe` or `/bin/sh`.
  *
  * @param args - Package selector followed by arguments for the invoked CLI.
  * @param options - Output handling options for the external command.
  */
 export function runNpx(args: string[], options: RunNpxOptions): void {
-  const command = ['npx', ...args.map(quoteShellArg)].join(' ');
+  const { file, leadingArgs } = resolveNpxInvocation();
 
   try {
-    execSync(command, {
+    execFileSync(file, [...leadingArgs, ...args], {
       encoding: 'utf8',
       maxBuffer: 10 * 1024 * 1024,
       stdio: options.verbose ? 'inherit' : 'pipe',
@@ -25,17 +37,42 @@ export function runNpx(args: string[], options: RunNpxOptions): void {
 }
 
 /**
- * Quotes a single argument for the current platform's shell.
+ * Determines how to spawn npx without going through a shell.
  *
- * @param value - Raw argument value.
- * @returns A shell-safe argument string.
+ * On Windows the `npx` on `PATH` is `npx.cmd`, a batch file that Node refuses
+ * to spawn with `shell: false` (the CVE-2024-27980 hardening). Running the
+ * bundled `npx-cli.js` with the current Node binary is the equivalent
+ * invocation that needs no shell. Everywhere else `npx` is directly
+ * executable.
+ *
+ * @returns The executable to spawn and the arguments that must precede the npx arguments.
  */
-function quoteShellArg(value: string): string {
-  if (process.platform === 'win32') {
-    return `"${value.replace(/"/g, '\\"')}"`;
+function resolveNpxInvocation(): NpxInvocation {
+  if (cachedInvocation) {
+    return cachedInvocation;
   }
 
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  if (process.platform !== 'win32') {
+    cachedInvocation = { file: 'npx', leadingArgs: [] };
+    return cachedInvocation;
+  }
+
+  const nodeDir = path.dirname(process.execPath);
+  const candidates = [
+    path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+    path.join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+  ];
+  const npxCli = candidates.find((candidate) => existsSync(candidate));
+
+  if (!npxCli) {
+    throw new Error(
+      `Could not locate npm's npx-cli.js next to ${process.execPath}. ` +
+        `Looked in:\n${candidates.map((candidate) => `  ${candidate}`).join('\n')}`,
+    );
+  }
+
+  cachedInvocation = { file: process.execPath, leadingArgs: [npxCli] };
+  return cachedInvocation;
 }
 
 function formatExecError(error: unknown, commandName: string): string {
