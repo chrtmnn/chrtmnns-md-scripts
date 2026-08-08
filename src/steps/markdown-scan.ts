@@ -1,9 +1,9 @@
 /**
- * Shared, fence-aware Markdown scanning primitives. Extracted from
- * `run-doctoc.ts` (which uses them to locate the first `##`-equivalent
- * heading for TOC placement) so that other steps can reuse the same
- * fence/indentation/setext handling instead of a second, divergent
- * implementation.
+ * Shared, fence-aware Markdown scanning primitives used by both
+ * `run-doctoc.ts` (to locate the first `##`-equivalent heading for TOC
+ * placement) and `extract-title.ts` (to locate the first heading of any
+ * level for the document title). Keeping this logic in one place avoids two
+ * divergent implementations of fence/indentation/setext handling.
  */
 
 /**
@@ -72,6 +72,18 @@ export function isPotentialSetextText(line: string): boolean {
     return false;
   }
   return true;
+}
+
+/**
+ * Checks whether a line is a setext first-order-heading underline (a run of
+ * one or more `=` characters, optionally indented and trailed by
+ * whitespace).
+ *
+ * @param line - Single line of Markdown, without its line terminator.
+ * @returns `true` when the line is a setext `=` underline.
+ */
+export function isSetextH1Underline(line: string): boolean {
+  return /^ {0,3}=+[ \t]*$/.test(line);
 }
 
 /**
@@ -156,4 +168,87 @@ export function findFrontmatterEnd(lines: string[]): number {
   }
 
   return -1;
+}
+
+/**
+ * A heading found by {@link findFirstHeading}.
+ */
+export interface HeadingMatch {
+  /** Heading level: 1-6 for ATX, 1 for a `===` setext underline, 2 for a `---` setext underline. */
+  level: number;
+  /** Heading text, trimmed. */
+  text: string;
+}
+
+/**
+ * Checks whether a line is a genuine ATX heading (`#` through `######`,
+ * indented up to 3 spaces, followed by whitespace or end of line) per
+ * CommonMark. Unlike a naive `/^\s*#+/` match, this rejects `#hashtag`
+ * (no space after the `#`) and lines indented 4 or more spaces (which
+ * CommonMark treats as an indented code block, not a heading).
+ *
+ * @param line - Single line of Markdown, without its line terminator.
+ * @returns The heading level and text, or `null` when the line is not an
+ *   ATX heading.
+ */
+export function matchAtxHeading(line: string): HeadingMatch | null {
+  const match = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/.exec(line);
+  if (!match) {
+    return null;
+  }
+  return { level: match[1].length, text: (match[2] ?? '').trim() };
+}
+
+/**
+ * Finds the first heading in a fence-aware scan of the document, of any
+ * level, recognising both ATX (`#` through `######`) and setext (text line
+ * followed by a `===` or `---` underline) headings. Lines inside fenced
+ * code blocks (```/~~~, closed only by a matching or longer run of the same
+ * character) are ignored, as are non-heading `#word` lines and lines
+ * indented 4 or more spaces.
+ *
+ * @param lines - Document lines, without line terminators. Callers should
+ *   already have stripped any leading YAML frontmatter block (see
+ *   {@link findFrontmatterEnd}) before calling this.
+ * @returns The first heading found, or `null` when none exists.
+ */
+export function findFirstHeading(lines: string[]): HeadingMatch | null {
+  let fenceChar: string | null = null;
+  let fenceLen = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = matchFenceDelimiter(line);
+
+    if (fence) {
+      if (fenceChar === null) {
+        fenceChar = fence.char;
+        fenceLen = fence.len;
+      } else if (fence.char === fenceChar && fence.len >= fenceLen) {
+        fenceChar = null;
+        fenceLen = 0;
+      }
+      continue;
+    }
+
+    if (fenceChar !== null) {
+      continue;
+    }
+
+    const atx = matchAtxHeading(line);
+    if (atx) {
+      return atx;
+    }
+
+    if (i + 1 < lines.length && isPotentialSetextText(line)) {
+      if (isSetextH1Underline(lines[i + 1])) {
+        return { level: 1, text: line.trim() };
+      }
+      if (isSetextH2Underline(lines[i + 1])) {
+        return { level: 2, text: line.trim() };
+      }
+    }
+  }
+
+  return null;
 }
