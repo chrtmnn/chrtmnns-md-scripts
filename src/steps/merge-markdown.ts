@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ConverterOptions } from '../types';
+import { absolutizeImageTargets } from './inline-assets';
 
 /**
  * Separator inserted between two consecutive source documents in a merged
@@ -145,12 +146,16 @@ function stripBom(value: string): string {
  * is simplest) and trims trailing whitespace so the caller can guarantee a
  * blank line between documents even when a file does not end in a newline.
  *
+ * Image targets are pinned to the document they came from: concatenation is
+ * the last moment at which each section's own directory is still known, and
+ * `inlineAssets` later embeds those absolute paths as `data:` URIs.
+ *
  * @param file - Absolute path of the source Markdown file.
  * @returns The normalised document body without trailing whitespace.
  */
 function readDocument(file: string): string {
   const raw = fs.readFileSync(file, 'utf8');
-  return stripBom(raw).trimEnd();
+  return absolutizeImageTargets(stripBom(raw).trimEnd(), path.dirname(file));
 }
 
 /**
@@ -161,14 +166,18 @@ function readDocument(file: string): string {
  * pipeline unchanged and lets `--force-doctoc` build one table of contents
  * spanning every document.
  *
- * Relative asset handling: link and image targets are **not** rewritten. The
- * merged file is written into a temp directory and md-to-pdf is already
- * invoked with `--basedir <workdir>` (see `render-pdf.ts`), so relative
- * targets resolve against the work directory for merged and single-file runs
- * alike — rewriting them here would not change where the renderer looks, and
- * would risk corrupting link text for no gain. What merging does change is
- * that documents from different directories end up sharing one base, so a
- * warning is emitted whenever the inputs span more than one directory.
+ * Relative asset handling: image targets **are** rewritten, to the absolute
+ * path they resolve to inside their own source document's directory. The
+ * merged file lives in a temp directory and combines documents from possibly
+ * several directories, so there is no single base left to resolve against
+ * once the sections are joined; pinning each target while its origin is
+ * still known is what lets `inlineAssets` embed it later. Targets that do not
+ * resolve to an existing file are left exactly as written.
+ *
+ * Link targets are **not** rewritten. They are not fetched during rendering,
+ * so rewriting them would only risk corrupting link text; a relative link
+ * between merged documents stays relative and may not point anywhere useful
+ * in the PDF.
  *
  * @param files - Resolved input paths, in conversion order.
  * @param options - Resolved converter options; `options.merge` supplies the output base name.
@@ -207,7 +216,7 @@ export function mergeMarkdown(files: string[], options: ConverterOptions): Merge
 
   if (distinctDirectories.size > 1) {
     warnings.push(
-      `Merging files from ${distinctDirectories.size} directories. Relative links and image paths are not rewritten and may not resolve in the merged PDF.`,
+      `Merging files from ${distinctDirectories.size} directories. Images are resolved per source document, but relative links are not rewritten and may not resolve in the merged PDF.`,
     );
   }
 
