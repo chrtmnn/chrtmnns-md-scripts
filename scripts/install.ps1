@@ -1,4 +1,4 @@
-$RepoRoot = $PSScriptRoot
+$RepoRoot = Split-Path -Parent $PSScriptRoot
 
 # --- pnpm ---
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {

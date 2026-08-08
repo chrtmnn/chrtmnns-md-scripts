@@ -1,4 +1,4 @@
-$BinDir = (Resolve-Path (Join-Path $PSScriptRoot "bin")).Path
+$BinDir = (Resolve-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "bin")).Path
 $CurrentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 $Parts = $CurrentPath -split ";" | Where-Object { $_ -ne $BinDir }
 

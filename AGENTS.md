@@ -109,7 +109,7 @@ All three sub-tools are invoked via `npx` through `runNpx` (`src/steps/run-npx.t
 
 ### Global wrapper (`bin/`)
 
-`bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to `pnpm --silent md2pdf`. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `install.ps1`; remove via `uninstall.ps1`.
+`bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to `pnpm --silent md2pdf`. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `scripts/install.ps1`; remove via `scripts/uninstall.ps1`.
 
 The wrapper classifies each CLI argument before forwarding it: path options (`-s`, `-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`--css-var`) have their value forwarded verbatim; flags and positional arguments are resolved as paths or passed as-is.
 

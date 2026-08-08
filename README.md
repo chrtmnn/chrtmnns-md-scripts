@@ -34,7 +34,7 @@ Prerequisites:
 Run the install script once from this repository:
 
 ```powershell
-.\install.ps1
+.\scripts\install.ps1
 ```
 
 The script installs pnpm globally (with confirmation) if it is not already available, runs `pnpm install` if dependencies are missing, and adds the `bin/` directory to your user `PATH`. Restart your terminal afterwards. The `md2pdf` command is then available from any directory.
@@ -112,7 +112,7 @@ md2pdf --debug README.md
 Remove the wrapper from your user `PATH`:
 
 ```powershell
-.\uninstall.ps1
+.\scripts\uninstall.ps1
 ```
 
 Restart your terminal afterwards.
