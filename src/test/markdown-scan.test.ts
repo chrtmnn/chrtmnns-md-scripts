@@ -146,6 +146,22 @@ test('findFirstHeading skips #hashtag lines and indented code (#18)', () => {
   assert.deepEqual(findFirstHeading(lines('    # indented code\n\n# Real Title\n')), { level: 1, text: 'Real Title' });
 });
 
+// ANOMALY (not a regression, pre-existing): the scan is fence-aware but not
+// HTML-comment-aware, so a heading that the author commented out still wins.
+// Same failure mode as #18, different container. Skipped because the
+// production code does not do this yet; do not change the assertion to match
+// the current behaviour.
+test('findFirstHeading should ignore headings inside HTML comment blocks', { skip: 'known gap, see PR notes' }, () => {
+  assert.deepEqual(findFirstHeading(['<!--', '# commented out', '-->', '# Real']), { level: 1, text: 'Real' });
+});
+
+// ANOMALY (not a regression, pre-existing): CommonMark allows an optional
+// closing hash sequence (`## Heading ##`), which should not be part of the
+// heading text. It currently ends up in the PDF's document title.
+test('matchAtxHeading should strip an optional closing hash sequence', { skip: 'known gap, see PR notes' }, () => {
+  assert.deepEqual(matchAtxHeading('## Heading ##'), { level: 2, text: 'Heading' });
+});
+
 test('findFirstHeading recognises setext headings at both levels', () => {
   assert.deepEqual(findFirstHeading(['Underlined', '===']), { level: 1, text: 'Underlined' });
   assert.deepEqual(findFirstHeading(['Underlined', '---']), { level: 2, text: 'Underlined' });
