@@ -5,7 +5,10 @@ import { runNpx } from './run-npx';
  * Renders the converted Markdown to a standalone HTML file for inspection.
  *
  * Uses md-to-pdf's `--as-html` flag so the embedded styles, document title,
- * and Mermaid SVGs match the PDF output exactly.
+ * and Mermaid SVGs match the PDF output exactly. `--basedir` is the work
+ * directory for the same reason as in `render-pdf.ts`; document assets are
+ * already embedded by `inlineAssets`, which also makes the emitted HTML
+ * self-contained once it is copied next to the PDF.
  *
  * @param context - Mutable conversion state for the current source file.
  */

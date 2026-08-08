@@ -47,14 +47,14 @@ The project is a CLI toolsuite for converting Markdown to PDF with Mermaid diagr
 
 `md2pdf` is the main entry point. After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / per-step spinner / `outro` UI. Each step is wrapped by a local `runStep(label, action)` helper that drives a spinner (or `log.info`/`log.success` when `--verbose` is set).
 
-Each step is a function that accepts a `ConversionContext` and **mutates it in place** (all steps return `void`). Steps run in order; `cleanup` runs in a `finally` block unconditionally.
+Each step is a function that accepts a `ConversionContext` and **mutates it in place**. Steps return `void`, except `inlineAssets`, which returns the non-fatal warnings the caller surfaces via `log.warn`. Steps run in order; `cleanup` runs in a `finally` block unconditionally.
 
 Before the per-file loop, `resolveInputs` (`src/steps/resolve-inputs.ts`) turns the raw positional arguments into the concrete list of Markdown files, and — when `--merge` is set — `mergeMarkdown` (`src/steps/merge-markdown.ts`) concatenates that list into one temporary Markdown file that the loop then runs over exactly once.
 
 ```
 resolveInputs → [mergeMarkdown] → for each file:
   prepareWorkdir → runDoctoc → extractTitle → renderMermaid
-    → createStylesheet → renderPdf → copyOutput → cleanup
+    → createStylesheet → inlineAssets → renderPdf → copyOutput → cleanup
 ```
 
 All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContext`, `CssVarOverride`) are in `src/types.ts`.
@@ -91,7 +91,8 @@ Positional arguments may be files or directories. A file positional is kept as-i
 - The merged file is written into a temp directory named after `--merge`, so `prepareWorkdir` derives the PDF name, the temp file names, and the document title from it. The document title is therefore the `--merge` name; `extractTitle` is skipped for merged runs.
 - The target directory is `-o` when given, otherwise the common ancestor directory of the resolved inputs. `md2pdf.ts` pins it by passing `{ ...options, outputDir: targetDir }` into `prepareWorkdir`, because the merged file itself lives in a temp directory.
 - The merge temp directory follows the same `-r` / `-p` placement rules as the conversion work directory and is removed unless `-k` is set.
-- **Limitation**: relative link and image targets are not rewritten. md-to-pdf is invoked with `--basedir <workdir>` (see `render-pdf.ts`), so relative targets already resolve against the temporary work directory for single-file runs too; rewriting them in the merged file would not change where the renderer looks. Merging does mean documents from different directories share one base, so a warning is emitted whenever the inputs span more than one directory.
+- Relative **image** targets are rewritten to absolute paths as each document is read, against that document's own directory. Concatenation is the last point at which a section's origin is still known, and `inlineAssets` embeds those absolute paths afterwards. Two documents in different directories can therefore both use `images/logo.png` and each still gets its own file.
+- **Limitation**: relative **link** targets are not rewritten. Links are not fetched during rendering, so a relative link between merged documents stays relative and may not point anywhere useful in the PDF. The warning emitted when the inputs span more than one directory says so.
 
 ### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
 
@@ -107,6 +108,21 @@ Each conversion creates an isolated temp directory (`stem_<8 random chars>`). Lo
 - `-p`: inside the output directory (or source dir if `-o` is absent)
 
 The `-k` flag preserves the temp dir for debugging.
+
+md-to-pdf is invoked with `--basedir <workdir>`. That is not a free choice: md-to-pdf serves `--basedir` over HTTP and loads the document from `http://localhost:<port>/<path relative to basedir>`, so the served directory has to be the one holding the converted Markdown and the generated Mermaid SVGs. Pointing `--basedir` at the source directory instead would put the document outside the served root and break the Mermaid references.
+
+### Asset embedding (`src/steps/inline-assets.ts`)
+
+Because the renderer only sees the work directory, a relative image reference in the user's document (`![](images/foo.png)`) would look for the asset next to the *generated* file. Absolute paths do not help either: Chromium refuses to load `file://` resources from an `http://localhost` page. `inlineAssets` therefore rewrites local image targets in the converted Markdown to `data:` URIs before `renderPdf` runs, which fixes resolution without giving up the temp directory isolation.
+
+- Only **image** targets are rewritten: Markdown `![alt](target)` and HTML `<img src>`. Links are never fetched during rendering and are left alone.
+- Fenced code blocks and inline code spans are skipped, so documentation that *shows* image syntax survives intact. Reference-style images (`![alt][ref]`) are not handled, because a link reference definition is shared between links and images.
+- Targets that already resolve inside the work directory are left untouched. This is what keeps the Mermaid SVGs working.
+- URLs (`https://`, `data:`, protocol-relative) are left untouched. Windows drive letters are not mistaken for URL schemes because a scheme must be at least two characters.
+- Single-file runs resolve relative targets against `context.sourceDir`. Merged runs resolve them per source document inside `mergeMarkdown` (see below), so by the time this step runs they are already absolute.
+- A target that does not resolve to an existing file, or an asset larger than `MAX_INLINE_BYTES` (32 MiB), is reported as a warning and left as written.
+
+A side effect worth knowing: the `--debug` HTML is now self-contained, so it renders correctly even when `-o` puts it somewhere other than the source directory.
 
 ### CSS variable system
 
