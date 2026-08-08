@@ -35,8 +35,6 @@ export type MergedInput = {
  * @returns The created temporary directory.
  */
 function createMergeDirectory(options: ConverterOptions, targetDir: string): string {
-  const name = `merge_${Math.random().toString(36).substring(2, 10)}`;
-
   let base: string;
   if (options.tempInOutput) {
     base = targetDir;
@@ -47,9 +45,7 @@ function createMergeDirectory(options: ConverterOptions, targetDir: string): str
   }
 
   fs.mkdirSync(base, { recursive: true });
-  const mergeDir = path.join(base, name);
-  fs.mkdirSync(mergeDir, { recursive: true });
-  return mergeDir;
+  return fs.mkdtempSync(path.join(base, 'merge_'));
 }
 
 /**

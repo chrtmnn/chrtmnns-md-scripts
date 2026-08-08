@@ -19,22 +19,19 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
   const baseName = path.basename(sourceFile);
   const stem = path.parse(baseName).name;
   const sourceDir = path.dirname(absSrc);
-  const workdirName = `${stem}_${Math.random().toString(36).substring(2, 10)}`;
 
   let workdir: string;
   if (options.tempInOutput) {
     const baseOut = options.outputDir ? path.resolve(options.outputDir) : sourceDir;
     fs.mkdirSync(baseOut, { recursive: true });
-    workdir = path.join(baseOut, workdirName);
+    workdir = fs.mkdtempSync(path.join(baseOut, `${stem}_`));
   } else if (options.tempRoot) {
     const tempRoot = path.resolve(options.tempRoot);
     fs.mkdirSync(tempRoot, { recursive: true });
-    workdir = path.join(tempRoot, workdirName);
+    workdir = fs.mkdtempSync(path.join(tempRoot, `${stem}_`));
   } else {
-    workdir = path.join(os.tmpdir(), workdirName);
+    workdir = fs.mkdtempSync(path.join(os.tmpdir(), `${stem}_`));
   }
-
-  fs.mkdirSync(workdir, { recursive: true });
 
   const targetDir = options.outputDir ? path.resolve(options.outputDir) : sourceDir;
   fs.mkdirSync(targetDir, { recursive: true });
