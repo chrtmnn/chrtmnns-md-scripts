@@ -89,9 +89,15 @@ Also emit an HTML file next to the PDF for inspection:
 md2pdf --debug README.md
 ```
 
+Render Mermaid diagrams as PNG instead of SVG:
+
+```powershell
+md2pdf --png README.md
+```
+
 ## Options
 
-`md2pdf [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [--verbose] [--debug] [files...]`
+`md2pdf [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [--verbose] [--debug] [--png] [files...]`
 
 | option                    | description                                                                                               |
 |---------------------------|-----------------------------------------------------------------------------------------------------------|
@@ -105,6 +111,7 @@ md2pdf --debug README.md
 | `-k, --keep-temp`         | Keep the temporary work directory and print its path.                                                     |
 | `--verbose`               | Print output from doctoc, mermaid-cli, and md-to-pdf while they run.                                      |
 | `--debug`                 | Also write a standalone HTML file next to the PDF using the same stylesheet.                              |
+| `--png`                   | Render Mermaid diagrams as PNG instead of SVG. Useful for PDF viewers or downstream tools that handle embedded SVG poorly. |
 | `-h, --help`              | Show help.                                                                                                |
 
 ## Uninstall
@@ -153,6 +160,8 @@ To also write the refreshed TOC back into the original Markdown file (instead of
 ### Mermaid Diagram Syntax
 
 Mermaid code fences are rendered automatically during conversion.
+
+Diagrams render to SVG by default. Pass `--png` to render them as PNG instead, at a 3x scale for print resolution. SVG is a good default because it stays crisp at any zoom level, but choose `--png` if the target PDF viewer or a downstream tool handles embedded SVG poorly.
 
 > For further information visit https://mermaid.js.org/intro/syntax-reference.html.
 
