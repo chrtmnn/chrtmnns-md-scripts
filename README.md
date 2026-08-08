@@ -6,7 +6,7 @@ Convert Markdown files to PDF from any terminal with one command:
 md2pdf README.md
 ```
 
-The command shows a compact progress view, refreshes an existing doctoc table of contents on a temporary copy, renders Mermaid diagrams, and writes a PDF next to the Markdown file unless another output directory is configured.
+The command shows a compact progress view, refreshes an existing doctoc table of contents on a temporary copy, renders Mermaid diagrams, and writes a PDF next to the Markdown file unless another output directory is configured. Arguments may be single files or whole folders, and `--merge` combines them into one PDF.
 
 ## Table of Contents
 
@@ -18,6 +18,8 @@ The command shows a compact progress view, refreshes an existing doctoc table of
 - [Options](#options)
 - [Uninstall](#uninstall)
 - [Additional usage information](#additional-usage-information)
+  - [Converting Folders](#converting-folders)
+  - [Merging Into One PDF](#merging-into-one-pdf)
   - [Manual Page Breaks](#manual-page-breaks)
   - [Table of Contents Markers](#table-of-contents-markers)
   - [Mermaid Diagram Syntax](#mermaid-diagram-syntax)
@@ -51,6 +53,30 @@ Convert multiple files:
 
 ```powershell
 md2pdf README.md docs\usage.md
+```
+
+Convert every `*.md` file of a folder:
+
+```powershell
+md2pdf docs
+```
+
+Include subfolders:
+
+```powershell
+md2pdf -R docs
+```
+
+Combine everything into a single PDF named `handbook.pdf`:
+
+```powershell
+md2pdf -R --merge handbook docs
+```
+
+Combine a folder and one extra file into a single PDF with one table of contents spanning all documents:
+
+```powershell
+md2pdf -f --merge handbook docs CHANGELOG.md
 ```
 
 Write PDFs to an output directory:
@@ -97,13 +123,15 @@ md2pdf --png README.md
 
 ## Options
 
-`md2pdf [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [--verbose] [--debug] [--png] [files...]`
+`md2pdf [-R] [--merge name] [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [--verbose] [--debug] [--png] [files or folders...]`
 
 | option                    | description                                                                                               |
 |---------------------------|-----------------------------------------------------------------------------------------------------------|
+| `-R, --recursive`         | Also expand subfolders of folder arguments. Skips `node_modules`, `.git`, and folders starting with a dot. |
+| `--merge <name>`          | Combine all resolved Markdown files into one PDF with this base name. The `.pdf` suffix is optional.      |
 | `-s, --stylesheet <file>` | Stylesheet for the generated PDF. Defaults to `src/css/default.css`.                                      |
 | `--css-var <name=value>`  | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. |
-| `-o, --output-dir <dir>`  | Output directory for PDFs. Defaults to each Markdown file's directory.                                    |
+| `-o, --output-dir <dir>`  | Output directory for PDFs. Defaults to each Markdown file's directory, or to the common parent folder of all inputs with `--merge`. |
 | `-r, --temp-root <dir>`   | Root directory for temporary work dirs. Defaults to the system temp directory.                            |
 | `-p, --temp-in-output`    | Place the temporary work dir inside the output directory.                                                 |
 | `-f, --force-doctoc`      | Create or refresh a TOC on the temporary conversion copy, even without source TOC markers.                |
@@ -129,6 +157,33 @@ Restart your terminal afterwards.
 <div class="page-break"></div>
 
 ## Additional usage information
+
+### Converting Folders
+
+A positional argument may be a Markdown file or a folder. A folder contributes the `*.md` files it contains, at the position where you named it, so `md2pdf intro.md chapters appendix.md` converts `intro.md`, then everything in `chapters`, then `appendix.md`.
+
+- Only the `.md` extension is matched, upper or lower case (`.md`, `.MD`). Other Markdown extensions such as `.markdown` are **not** picked up.
+- Files inside one folder are converted in file name order. The comparison is a plain code-point comparison so the order is identical on every machine, which also means names starting with an upper-case letter come first (`README.md` before `readme.md`).
+- Pass `-R` to include subfolders. `node_modules`, `.git`, and any folder whose name starts with a dot are skipped, and folder links (symlinks and junctions) are not followed, so a link pointing back at a parent folder cannot cause an endless loop.
+- Passing both a folder and a file inside it converts that file once, not twice.
+- A folder without any `.md` file produces a warning and is not counted as a failure.
+
+### Merging Into One PDF
+
+`--merge <name>` combines every resolved Markdown file into a single PDF:
+
+```powershell
+md2pdf -R --merge handbook docs
+```
+
+This writes `handbook.pdf`. The `.pdf` suffix is optional, so `--merge handbook.pdf` is equivalent. The name is a file name, not a path; use `-o` to choose the folder. Without `-o` the PDF is written to the common parent folder of all inputs.
+
+Merging happens on the Markdown, before rendering, and the normal conversion then runs once over the combined document. Two consequences are worth knowing:
+
+- All other options still apply. In particular `-f/--force-doctoc` produces **one** table of contents spanning every document, which is usually the main reason to merge in the first place.
+- Each document starts on a new page. The page break is produced by the `.document-break` helper in the default stylesheet. If you pass your own stylesheet with `-s`, add a matching rule or the documents will run together. To flatten the breaks, use `--css-var document-page-break-before=auto --css-var document-break-before=auto`.
+
+> **Limitation**: relative link and image targets are not rewritten when documents are merged. All documents share one base location, so a `![](images/logo.png)` written relative to a subfolder will not resolve in the merged PDF. `md2pdf` prints a warning whenever the merged inputs come from more than one folder. Use absolute paths or URLs for assets in documents you intend to merge.
 
 ### Manual Page Breaks
 

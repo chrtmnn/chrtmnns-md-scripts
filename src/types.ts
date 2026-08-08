@@ -34,6 +34,13 @@ export type ConverterOptions = {
   debug: boolean;
   /** Whether Mermaid diagrams should be rendered as PNG instead of the default SVG. */
   png: boolean;
+  /** Whether directory arguments should be expanded into their subdirectories as well. */
+  recursive: boolean;
+  /**
+   * Base name (without the `.pdf` suffix) of the single PDF all resolved
+   * Markdown files should be merged into. Undefined when `--merge` is absent.
+   */
+  merge?: string;
   /** Package selectors used for external npx invocations. */
   packages: {
     doctoc: string;

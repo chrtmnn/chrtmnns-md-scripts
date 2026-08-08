@@ -49,9 +49,12 @@ The project is a CLI toolsuite for converting Markdown to PDF with Mermaid diagr
 
 Each step is a function that accepts a `ConversionContext` and **mutates it in place** (all steps return `void`). Steps run in order; `cleanup` runs in a `finally` block unconditionally.
 
+Before the per-file loop, `resolveInputs` (`src/steps/resolve-inputs.ts`) turns the raw positional arguments into the concrete list of Markdown files, and — when `--merge` is set — `mergeMarkdown` (`src/steps/merge-markdown.ts`) concatenates that list into one temporary Markdown file that the loop then runs over exactly once.
+
 ```
-prepareWorkdir → runDoctoc → extractTitle → renderMermaid
-  → createStylesheet → renderPdf → copyOutput → cleanup
+resolveInputs → [mergeMarkdown] → for each file:
+  prepareWorkdir → runDoctoc → extractTitle → renderMermaid
+    → createStylesheet → renderPdf → copyOutput → cleanup
 ```
 
 All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContext`, `CssVarOverride`) are in `src/types.ts`.
@@ -67,6 +70,28 @@ All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContex
 | `docTitle` | `extractTitle` | `--document-title` passed to md-to-pdf |
 | `effectiveStylesheet` | `createStylesheet` | Final CSS path (base or merged with overrides) |
 | `tempHtml` / `outputHtml` | `prepareWorkdir` | Debug HTML paths; populated by `renderHtml` and `copyOutput` only when `--debug` is set |
+
+### Argument expansion (`src/steps/resolve-inputs.ts`)
+
+Positional arguments may be files or directories. A file positional is kept as-is (including non-existent paths, which are forwarded verbatim so `prepareWorkdir` keeps producing its `Skipped missing file` warning). A directory positional is replaced by the `*.md` files it contains, at the position the user gave it.
+
+- Extension matching is case-insensitive (`.md`, `.MD`); `.markdown` is deliberately **not** matched.
+- Ordering uses plain `<`/`>` on the raw file names (UTF-16 code-unit order) rather than `localeCompare`, so it cannot shift with the machine's locale or ICU build. Note that this sorts uppercase before lowercase, e.g. `README.MD` before `readme.md`.
+- `-R, --recursive` descends into subdirectories: a directory's own files first (sorted), then its subdirectories (sorted), each recursively. `-R` without a directory positional is a no-op.
+- Directories named in `SKIPPED_DIRECTORY_NAMES` (`node_modules`, `.git`) and any directory whose name starts with `.` are never descended into. They can still be expanded when passed explicitly as a positional.
+- Symlink loops are avoided by never following directory symlinks: recursion only descends into entries where `Dirent.isDirectory()` is true, which is false for symlinks and Windows junctions. No visited-realpath bookkeeping is needed because a cycle can only be formed through a link. Symlinked `.md` *files* are still collected (verified with an extra `statSync`).
+- The final list is deduplicated by resolved absolute path (case-insensitively on Windows), keeping the first occurrence, so passing both a folder and a file inside it converts that file once.
+- An empty directory produces a warning, not a failure.
+
+### Merging (`src/steps/merge-markdown.ts`)
+
+`--merge <name>` combines every resolved Markdown file into a single PDF. No PDF-merging library is involved and no dependency was added: the Markdown is concatenated **before** rendering and the existing pipeline then runs once over the concatenated file, so every other flag keeps working unchanged and `--force-doctoc` produces one table of contents spanning all documents.
+
+- Documents are separated by a `<div class="document-break"></div>` block with blank lines on both sides, so a file without a trailing newline cannot glue its last line onto the next document. The matching `.document-break` rule is in `src/css/default.css`, driven by the `--document-page-break-before` / `--document-break-before` custom properties. Headings cannot be used for the break because they default to `break-before: auto`.
+- The merged file is written into a temp directory named after `--merge`, so `prepareWorkdir` derives the PDF name, the temp file names, and the document title from it. The document title is therefore the `--merge` name; `extractTitle` is skipped for merged runs.
+- The target directory is `-o` when given, otherwise the common ancestor directory of the resolved inputs. `md2pdf.ts` pins it by passing `{ ...options, outputDir: targetDir }` into `prepareWorkdir`, because the merged file itself lives in a temp directory.
+- The merge temp directory follows the same `-r` / `-p` placement rules as the conversion work directory and is removed unless `-k` is set.
+- **Limitation**: relative link and image targets are not rewritten. md-to-pdf is invoked with `--basedir <workdir>` (see `render-pdf.ts`), so relative targets already resolve against the temporary work directory for single-file runs too; rewriting them in the merged file would not change where the renderer looks. Merging does mean documents from different directories share one base, so a warning is emitted whenever the inputs span more than one directory.
 
 ### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
 
@@ -96,6 +121,8 @@ The `-k` flag preserves the temp dir for debugging.
 | `--font-code` | `"JetBrains Mono"` | Code font |
 | `--page-margin-top` / `-right` / `-bottom` / `-left` | `2cm` / `2cm` / `2cm` / `2.5cm` | Individual page margins (A4) |
 | `--page-margin` | composed from the four individual margins | Shorthand to set all four margins at once |
+| `--document-page-break-before` | `always` | Page break before each document combined with `--merge` |
+| `--document-break-before` | `page` | Same, modern syntax |
 
 To enable per-heading page breaks: `--css-var heading-page-break-before=always --css-var heading-break-before=page`.
 
@@ -115,6 +142,8 @@ Mermaid diagrams render to SVG by default. The `--png` flag switches mermaid-cli
 
 `bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to `pnpm --silent md2pdf`. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `scripts/install.ps1`; remove via `scripts/uninstall.ps1`.
 
-The wrapper classifies each CLI argument before forwarding it: path options (`-s`, `-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`--css-var`) have their value forwarded verbatim; flags and positional arguments are resolved as paths or passed as-is.
+The wrapper classifies each CLI argument before forwarding it: path options (`-s`, `-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`--css-var`, `--merge`) have their value forwarded verbatim, in both the space-separated and the `--option=value` inline form; flags and positional arguments are resolved as paths or passed as-is. Positional arguments are resolved to absolute paths whether they are files or directories.
+
+Option lookup uses ordinal (case-sensitive) `HashSet`s built by `New-OrdinalSet`. PowerShell's `@{}` hashtables and the `-contains` operator both compare case-insensitively, which would make the valueless flag `-R/--recursive` collide with the path option `-r/--temp-root` and swallow the next argument as a path.
 
 Before classification, `$args` is flattened by `ConvertTo-FlatArgumentList`. PowerShell passes a parenthesized array expression (`md2pdf (Get-ChildItem *.md).Name`) as a *single* array-valued argument instead of unrolling it, which would otherwise break the string-based parsing loop.

@@ -36,17 +36,27 @@ function ConvertTo-FlatArgumentList {
 
 $CliArgs = ConvertTo-FlatArgumentList -Arguments $args
 
-$pathValueOptions = @{
-    "-s" = $true
-    "--stylesheet" = $true
-    "-o" = $true
-    "--output-dir" = $true
-    "-r" = $true
-    "--temp-root" = $true
+# Ordinal (case-sensitive) sets: PowerShell's @{} hashtables and the -contains
+# operator both compare case-insensitively, which would make the valueless flag
+# -R/--recursive collide with the path option -r/--temp-root and swallow the
+# following argument as a path.
+function New-OrdinalSet {
+    param([string[]]$Values)
+
+    $set = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
+    foreach ($value in $Values) {
+        [void]$set.Add($value)
+    }
+
+    return ,$set
 }
 
+# Options that take a value which must be resolved against the caller's CWD.
+$pathValueOptions = New-OrdinalSet @("-s", "--stylesheet", "-o", "--output-dir", "-r", "--temp-root")
+
 # Options that take a value but whose value must NOT be resolved as a path.
-$passthroughValueOptions = @("--css-var")
+# --merge takes an output PDF base name, not a path.
+$passthroughValueOptions = New-OrdinalSet @("--css-var", "--merge")
 
 function Resolve-ArgumentPath {
     param([string]$Value)
@@ -78,22 +88,36 @@ for ($index = 0; $index -lt $CliArgs.Count; $index++) {
         continue
     }
 
-    $inlinePathOption = $false
-    foreach ($option in $pathValueOptions.Keys) {
+    $inlineOption = $false
+    foreach ($option in $pathValueOptions) {
         $prefix = "$option="
         if ($arg.StartsWith($prefix, [System.StringComparison]::Ordinal)) {
             $value = $arg.Substring($prefix.Length)
             $resolvedArgs.Add("$option=$(Resolve-ArgumentPath $value)")
-            $inlinePathOption = $true
+            $inlineOption = $true
             break
         }
     }
 
-    if ($inlinePathOption) {
+    if ($inlineOption) {
         continue
     }
 
-    if ($pathValueOptions.ContainsKey($arg)) {
+    # Inline form of a passthrough option, e.g. --merge=handbook. Forwarded
+    # verbatim so the value is never treated as a path.
+    foreach ($option in $passthroughValueOptions) {
+        if ($arg.StartsWith("$option=", [System.StringComparison]::Ordinal)) {
+            $resolvedArgs.Add($arg)
+            $inlineOption = $true
+            break
+        }
+    }
+
+    if ($inlineOption) {
+        continue
+    }
+
+    if ($pathValueOptions.Contains($arg)) {
         $resolvedArgs.Add($arg)
         if ($index + 1 -ge $CliArgs.Count) {
             Write-Error "Option $arg requires a path argument."
@@ -105,7 +129,7 @@ for ($index = 0; $index -lt $CliArgs.Count; $index++) {
         continue
     }
 
-    if ($passthroughValueOptions -contains $arg) {
+    if ($passthroughValueOptions.Contains($arg)) {
         $resolvedArgs.Add($arg)
         if ($index + 1 -ge $CliArgs.Count) {
             Write-Error "Option $arg requires an argument."

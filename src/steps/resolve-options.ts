@@ -15,6 +15,8 @@ type RawOptions = {
   verbose?: boolean;
   debug?: boolean;
   png?: boolean;
+  recursive?: boolean;
+  merge?: string;
 };
 
 /**
@@ -61,12 +63,40 @@ export function resolveOptions(program: Command): ConverterOptions {
     verbose: Boolean(rawOptions.verbose),
     debug: Boolean(rawOptions.debug),
     png: Boolean(rawOptions.png),
+    recursive: Boolean(rawOptions.recursive),
+    merge: rawOptions.merge === undefined ? undefined : parseMergeName(rawOptions.merge),
     packages: {
       doctoc: process.env.DOCTOC_PKG || 'doctoc@2.3.0',
       mermaidCli: process.env.MERMAID_CLI_PKG || '@mermaid-js/mermaid-cli@11.12.0',
       mdToPdf: process.env.MD_TO_PDF_PKG || 'md-to-pdf@5.2.5',
     },
   };
+}
+
+/**
+ * Normalizes the `--merge <name>` value into a plain PDF base name.
+ *
+ * The value is a name, not a path: the merged PDF always lands in the
+ * resolved target directory, so anything that looks like a path is rejected
+ * rather than silently reinterpreted. A trailing `.pdf` suffix is accepted
+ * and removed, so both `report` and `report.pdf` produce `report.pdf`.
+ *
+ * @param value - Raw `--merge` value from the CLI.
+ * @returns The validated PDF base name without extension.
+ */
+function parseMergeName(value: string): string {
+  const trimmed = value.trim();
+  const name = /\.pdf$/i.test(trimmed) ? trimmed.slice(0, -4) : trimmed;
+
+  if (!name || name === '.' || name === '..') {
+    throw new Error(`Invalid --merge name: ${value}. Expected a PDF base name.`);
+  }
+
+  if (/[<>:"/\\|?*]/.test(name)) {
+    throw new Error(`Invalid --merge name: ${value}. Expected a plain file name without path separators.`);
+  }
+
+  return name;
 }
 
 /**
