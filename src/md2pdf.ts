@@ -10,6 +10,7 @@ import { MergedInput, mergeMarkdown } from './steps/merge-markdown';
 import { resolveInputs } from './steps/resolve-inputs';
 import { resolveStylesheet } from './steps/resolve-stylesheet';
 import { extractTitle } from './steps/extract-title';
+import { inlineAssets } from './steps/inline-assets';
 import { prepareWorkdir } from './steps/prepare-workdir';
 import { hasMermaidFences, renderMermaid } from './steps/render-mermaid';
 import { renderHtml } from './steps/render-html';
@@ -153,6 +154,10 @@ async function run(options: ConverterOptions): Promise<void> {
         } else {
           fs.copyFileSync(context.inputMarkdown, context.convertedMarkdown);
         }
+        // md-to-pdf renders from a server rooted at the work directory, so
+        // the document's own assets have to be carried into the converted
+        // Markdown before it runs.
+        runStep('Embedding assets', () => inlineAssets(context)).forEach((warning) => log.warn(warning));
         runStep('Rendering PDF', () => renderPdf(context));
         if (options.debug) {
           runStep('Rendering debug HTML', () => renderHtml(context));
