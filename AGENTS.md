@@ -138,6 +138,8 @@ The `-k` flag preserves the temp dir for debugging.
 
 md-to-pdf is invoked with `--basedir <workdir>`. That is not a free choice: md-to-pdf serves `--basedir` over HTTP and loads the document from `http://localhost:<port>/<path relative to basedir>`, so the served directory has to be the one holding the converted Markdown and the generated Mermaid SVGs. Pointing `--basedir` at the source directory instead would put the document outside the served root and break the Mermaid references.
 
+`renderPdf` also passes `--config-file src/config/md-to-pdf.config.json`, which sets `pdf_options.preferCSSPageSize: true`. Without it Puppeteer's `format: 'a4'` default wins over the stylesheet's `@page { size }`, and Chromium scales a non-A4 CSS page (e.g. `--css-var page-size=A5`) down onto A4 sheets. `--pdf-options` is deliberately not used for this: md-to-pdf assigns it over `pdf_options` wholesale, which would drop the `printBackground` / `format` / `margin` defaults and any front-matter `pdf_options`. A config file is merged onto the defaults, and front matter still takes precedence over it.
+
 ### Asset embedding (`src/steps/inline-assets.ts`)
 
 Because the renderer only sees the work directory, a relative image reference in the user's document (`![](images/foo.png)`) would look for the asset next to the *generated* file. Absolute paths do not help either: Chromium refuses to load `file://` resources from an `http://localhost` page. `inlineAssets` therefore rewrites local image targets in the converted Markdown to `data:` URIs before `renderPdf` runs, which fixes resolution without giving up the temp directory isolation.
@@ -166,6 +168,7 @@ md-to-pdf never references `--stylesheet` by path in the rendered page — it re
 | `--font-code` | `"JetBrains Mono"` | Code font |
 | `--page-margin-top` / `-right` / `-bottom` / `-left` | `2cm` / `2cm` / `2cm` / `2.5cm` | Individual page margins (A4) |
 | `--page-margin` | composed from the four individual margins | Shorthand to set all four margins at once |
+| `--page-size` | `A4` | `@page` size, e.g. `A5`, `letter`, `A4 landscape` |
 | `--document-page-break-before` | `always` | Page break before each document combined with `--merge` |
 | `--document-break-before` | `page` | Same, modern syntax |
 

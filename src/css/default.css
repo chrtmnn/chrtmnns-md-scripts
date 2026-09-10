@@ -21,6 +21,8 @@
     --font-text: "Aptos";
     --font-size: 11pt;
     --font-code: "JetBrains Mono", "Fira Code";
+    --font-text-full: var(--font-text), "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-code-full: var(--font-code), "JetBrains Mono", "Fira Code", Consolas, monospace;
 
     /* heading page breaks */
     --heading-page-break-before: auto;
@@ -32,7 +34,12 @@
     --document-page-break-before: always;
     --document-break-before: page;
 
-    /* page margins (top right bottom left) */
+    /* page options, margins (top right bottom left) */
+    --page-size: A4;
+    --page-bottom-left-content: unset;
+    --page-bottom-center-content: counter(page) "/" counter(pages);
+    --page-bottom-right-content: unset;
+
     --page-margin-top: 1.6cm;
     --page-margin-right: 1.6cm;
     --page-margin-bottom: 1.6cm;
@@ -41,24 +48,35 @@
 }
 
 @page {
-    size: A4;
+    font-family: var(--font-text-full), "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    size: var(--page-size);
     margin: var(--page-margin);
 }
 
 @page {
+    @bottom-left {
+        content: var(--page-bottom-left-content, unset);
+        font-size: 9pt;
+        color: var(--color-muted);
+    }
     @bottom-center {
-        content: counter(page);
+        content: var(--page-bottom-center-content, unset);
+        font-size: 9pt;
+        color: var(--color-muted);
+    }
+    @bottom-right {
+        content: var(--page-bottom-right-content, unset);
         font-size: 9pt;
         color: var(--color-muted);
     }
 }
 
 html {
+    font-family: var(--font-text-full), "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     font-size: var(--font-size);
 }
 
 body {
-    font-family: var(--font-text), "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     line-height: 1.6;
     color: var(--color-text);
     background: var(--color-bg);
@@ -178,7 +196,7 @@ a:hover {
    ========================= */
 
 code {
-    font-family: var(--font-code), Consolas, monospace;
+    font-family: var(--font-code-full), monospace;
     font-size: 0.95em;
     background: var(--color-code-bg);
     padding: 0.15em 0.35em;
@@ -186,7 +204,7 @@ code {
 }
 
 pre {
-    font-family: var(--font-code), Consolas, monospace;
+    font-family: var(--font-code-full), monospace;
     font-size: 0.9em;
     background: var(--color-code-bg);
     color: var(--color-code-text);
@@ -199,7 +217,8 @@ pre {
 }
 
 pre code,
-pre code.hljs:nth-child(n) /* override highlight.js */ {
+pre code.hljs:nth-child(n) /* override highlight.js */
+{
     background: none;
     padding: 0;
 }
@@ -320,6 +339,6 @@ hr {
     a::after {
         content: " (" attr(href) ")";
         font-size: 0.85em;
-        color:  var(--color-muted);
+        color: var(--color-muted);
     }
 }
