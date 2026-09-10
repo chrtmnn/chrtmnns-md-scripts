@@ -1,8 +1,21 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { Command } from 'commander';
 import { ConverterOptions } from '../types';
 import { parseCssVars, parseMergeName } from './option-values';
+import { configDirectory, findStylesheet, INVOCATION_DIR_ENV } from './stylesheet-lookup';
+
+/**
+ * Reports whether a path is an existing file. A directory that happens to
+ * carry the stylesheet's name does not count, so the lookup moves on.
+ *
+ * @param file - Absolute path to check.
+ * @returns True when `file` exists and is a regular file.
+ */
+function isFile(file: string): boolean {
+  return fs.statSync(file, { throwIfNoEntry: false })?.isFile() ?? false;
+}
 
 type RawOptions = {
   stylesheet?: string;
@@ -39,17 +52,22 @@ export function collect(value: string, previous: string[]): string[] {
  */
 export function resolveOptions(program: Command): ConverterOptions {
   const rawOptions = program.opts<RawOptions>();
-  let stylesheet = rawOptions.stylesheet;
+  let stylesheet: string | undefined;
 
-  if (!stylesheet) {
+  if (rawOptions.stylesheet) {
+    // Relative values and bare names refer to the caller's directory, which
+    // the global wrapper passes in because it runs pnpm from the repo root.
+    stylesheet = findStylesheet(
+      rawOptions.stylesheet,
+      process.env[INVOCATION_DIR_ENV] || process.cwd(),
+      configDirectory(process.env, os.homedir()),
+      isFile,
+    );
+  } else {
     const defaultStylesheet = path.resolve(__dirname, '..', 'css', 'default.css');
     if (fs.existsSync(defaultStylesheet)) {
       stylesheet = defaultStylesheet;
     }
-  }
-
-  if (stylesheet && !fs.existsSync(stylesheet)) {
-    throw new Error(`Stylesheet not found: ${stylesheet}`);
   }
 
   return {
