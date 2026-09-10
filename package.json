@@ -6,6 +6,7 @@
     "md2pdf": "tsx src/md2pdf.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/test/*.test.ts\"",
+    "test:coverage": "node --import tsx --enable-source-maps --experimental-test-coverage --test-coverage-exclude=\"src/test/**\" --test \"src/test/*.test.ts\"",
     "smoke": "tsx src/md2pdf.ts -u --css-var heading-break-before=page README.md"
   },
   "repository": {
