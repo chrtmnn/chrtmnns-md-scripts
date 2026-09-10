@@ -129,7 +129,7 @@ md2pdf --png README.md
 |---------------------------|-----------------------------------------------------------------------------------------------------------|
 | `-R, --recursive`         | Also expand subfolders of folder arguments. Skips `node_modules`, `.git`, and folders starting with a dot. |
 | `--merge <name>`          | Combine all resolved Markdown files into one PDF with this base name. The `.pdf` suffix is optional.      |
-| `-s, --stylesheet <file>` | Stylesheet for the generated PDF. Defaults to `src/css/default.css`.                                      |
+| `-s, --stylesheet <file>` | Stylesheet for the generated PDF. Defaults to `src/css/default.css`. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
 | `--css-var <name=value>`  | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. |
 | `-o, --output-dir <dir>`  | Output directory for PDFs. Defaults to each Markdown file's directory, or to the common parent folder of all inputs with `--merge`. |
 | `-r, --temp-root <dir>`   | Root directory for temporary work dirs. Defaults to the system temp directory.                            |
