@@ -32,7 +32,8 @@
     --document-page-break-before: always;
     --document-break-before: page;
 
-    /* page margins (top right bottom left) */
+    /* page options, margins (top right bottom left) */
+    --page-size: A4;
     --page-margin-top: 1.6cm;
     --page-margin-right: 1.6cm;
     --page-margin-bottom: 1.6cm;
@@ -41,7 +42,7 @@
 }
 
 @page {
-    size: A4;
+    size: var(--page-size, A4);
     margin: var(--page-margin);
 }
 
