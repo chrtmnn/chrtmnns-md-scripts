@@ -61,8 +61,10 @@ its own module rather than being `export`ed out of a file that also does I/O.
 `markdown-scan.ts` (scanning primitives, out of `run-doctoc.ts`),
 `toc-placement.ts` (TOC relocation rules, out of `run-doctoc.ts`),
 `merge-assembly.ts` (concatenation and common-ancestor computation, out of
-`merge-markdown.ts`) and `option-values.ts` (`--css-var` / `--merge`
-validation, out of `resolve-options.ts`) all follow that split: the step file
+`merge-markdown.ts`), `option-values.ts` (`--css-var` / `--merge`
+validation, out of `resolve-options.ts`) and `npx-invocation.ts` (the
+shell-free npx lookup and error formatting, out of `run-npx.ts`) all follow
+that split: the step file
 keeps the filesystem work, the extracted module keeps the rules.
 
 ## Architecture
