@@ -29,6 +29,7 @@ This file provides guidance to AI Agents when working with code in this reposito
 ```bash
 pnpm typecheck          # TypeScript type-check (no emit), test files included
 pnpm test               # Automated unit tests (node:test), this is what CI runs
+pnpm test:coverage      # Same tests with Node's built-in line/branch coverage report
 pnpm md2pdf [options] [files...]   # Full pipeline: TOC → Mermaid → PDF
 pnpm smoke              # Manual smoke test of md2pdf with CSS overrides
 ```
@@ -55,6 +56,11 @@ mermaid-cli, md-to-pdf) are not covered — the tests must stay fast and must no
 need the network or Chromium. Tests that need a symbolic link skip themselves
 via `t.skip()` when the platform refuses to create one (Windows needs Developer
 Mode or elevation); the Windows-junction test skips on other platforms.
+
+`pnpm test:coverage` only reports files that at least one test imports. The
+modules that no test loads (`md2pdf.ts` and the `runNpx` steps) are missing
+from the table rather than listed at 0 %, so the "all files" total covers the
+tested modules only.
 
 **Convention for testable helpers**: pure logic that deserves tests moves into
 its own module rather than being `export`ed out of a file that also does I/O.
