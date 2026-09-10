@@ -25,7 +25,7 @@ program
   .argument('[files...]', 'Markdown files or directories to convert')
   .option('-R, --recursive', 'Expand directory arguments recursively')
   .option('--merge <name>', 'Merge all resolved Markdown files into a single PDF with this base name')
-  .option('-s, --stylesheet <path>', 'Stylesheet passed to md-to-pdf')
+  .option('-s, --stylesheet <path>', 'Stylesheet path, or the name of a stylesheet in ~/.md2pdf (".css" optional)')
   .option('--css-var <name=value>', 'Override a CSS custom property, repeatable', collect, [])
   .option('-o, --output-dir <path>', 'Output directory for PDFs')
   .option('-r, --temp-root <path>', 'Root directory for temp work dirs')

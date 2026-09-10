@@ -52,11 +52,13 @@ function New-OrdinalSet {
 }
 
 # Options that take a value which must be resolved against the caller's CWD.
-$pathValueOptions = New-OrdinalSet @("-s", "--stylesheet", "-o", "--output-dir", "-r", "--temp-root")
+$pathValueOptions = New-OrdinalSet @("-o", "--output-dir", "-r", "--temp-root")
 
 # Options that take a value but whose value must NOT be resolved as a path.
-# --merge takes an output PDF base name, not a path.
-$passthroughValueOptions = New-OrdinalSet @("--css-var", "--merge")
+# --merge takes an output PDF base name, not a path. -s/--stylesheet may be a
+# bare name from ~/.md2pdf, so md2pdf resolves it itself against the caller's
+# directory, which is passed in MD2PDF_INVOCATION_DIR below.
+$passthroughValueOptions = New-OrdinalSet @("-s", "--stylesheet", "--css-var", "--merge")
 
 function Resolve-ArgumentPath {
     param([string]$Value)
@@ -149,6 +151,13 @@ for ($index = 0; $index -lt $CliArgs.Count; $index++) {
     $resolvedArgs.Add((Resolve-ArgumentPath $arg))
 }
 
+# md2pdf runs from the repo root, so it is told where relative -s values and
+# stylesheet names are resolved. The previous value is restored because a
+# script run from an interactive PowerShell shares that session's environment,
+# and a stale value would redirect later direct `pnpm md2pdf` runs.
+$previousInvocationDirectory = $env:MD2PDF_INVOCATION_DIR
+$env:MD2PDF_INVOCATION_DIR = $InvocationDirectory
+
 Push-Location $RepoRoot
 try {
     & pnpm --silent md2pdf -- @resolvedArgs
@@ -156,4 +165,5 @@ try {
 }
 finally {
     Pop-Location
+    $env:MD2PDF_INVOCATION_DIR = $previousInvocationDirectory
 }

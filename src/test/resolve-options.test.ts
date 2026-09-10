@@ -36,30 +36,38 @@ function parse(args: string[]): Command {
 }
 
 /**
- * Sets the package override variables for one test and restores the caller's
- * values afterwards, so a developer's own `DOCTOC_PKG` cannot leak in.
+ * Sets or removes (`undefined`) environment variables for one test and
+ * restores the caller's values afterwards, so a developer's own settings —
+ * or a value left behind by the global wrapper — cannot leak in.
  */
-function withPackageEnv(t: TestContext, values: Partial<Record<(typeof PACKAGE_ENV_VARS)[number], string>>): void {
-  const saved = PACKAGE_ENV_VARS.map((name) => [name, process.env[name]] as const);
+function withEnv(t: TestContext, values: Record<string, string | undefined>): void {
+  const saved = Object.keys(values).map((name) => [name, process.env[name]] as const);
 
   t.after(() => {
     for (const [name, value] of saved) {
-      if (value === undefined) {
-        delete process.env[name];
-      } else {
-        process.env[name] = value;
-      }
+      setEnv(name, value);
     }
   });
 
-  for (const name of PACKAGE_ENV_VARS) {
-    const value = values[name];
-    if (value === undefined) {
-      delete process.env[name];
-    } else {
-      process.env[name] = value;
-    }
+  for (const [name, value] of Object.entries(values)) {
+    setEnv(name, value);
   }
+}
+
+function setEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
+/**
+ * Sets the package override variables for one test; the ones not given are
+ * removed, so a developer's own `DOCTOC_PKG` cannot leak in.
+ */
+function withPackageEnv(t: TestContext, values: Partial<Record<(typeof PACKAGE_ENV_VARS)[number], string>>): void {
+  withEnv(t, Object.fromEntries(PACKAGE_ENV_VARS.map((name) => [name, values[name]])));
 }
 
 test('collect appends without mutating the previous values', () => {
@@ -170,4 +178,74 @@ test('treats an empty package variable as unset', (t) => {
   withPackageEnv(t, { DOCTOC_PKG: '' });
 
   assert.equal(resolveOptions(parse(['doc.md'])).packages.doctoc, 'doctoc@2.3.0');
+});
+
+test('resolves a relative stylesheet against MD2PDF_INVOCATION_DIR (#34)', (t) => {
+  const caller = tempDir(t);
+  const stylesheet = writeFile(caller, 'local.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t), MD2PDF_INVOCATION_DIR: caller });
+
+  assert.equal(resolveOptions(parse(['-s', 'local.css', 'doc.md'])).stylesheet, stylesheet);
+});
+
+test('falls back to the process working directory without MD2PDF_INVOCATION_DIR (#34)', (t) => {
+  // Registered first because after-hooks run in registration order: the
+  // process has to leave the temp directory before Windows lets it be removed.
+  const previous = process.cwd();
+  t.after(() => process.chdir(previous));
+
+  const caller = tempDir(t);
+  const stylesheet = writeFile(caller, 'local.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t), MD2PDF_INVOCATION_DIR: undefined });
+  process.chdir(caller);
+
+  assert.equal(
+    comparablePath(resolveOptions(parse(['-s', 'local.css', 'doc.md'])).stylesheet!),
+    comparablePath(stylesheet),
+  );
+});
+
+test('falls back to a named stylesheet in the config directory, with or without .css (#34)', (t) => {
+  const config = tempDir(t);
+  const custom = writeFile(config, 'custom.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+
+  assert.equal(resolveOptions(parse(['-s', 'custom.css', 'doc.md'])).stylesheet, custom);
+  assert.equal(resolveOptions(parse(['-s', 'custom', 'doc.md'])).stylesheet, custom);
+});
+
+test('prefers the invocation directory over the config directory (#34)', (t) => {
+  const caller = tempDir(t);
+  const config = tempDir(t);
+  const local = writeFile(caller, 'local.css', 'body {}\n');
+  writeFile(config, 'local.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: caller });
+
+  assert.equal(resolveOptions(parse(['-s', 'local.css', 'doc.md'])).stylesheet, local);
+});
+
+test('skips a directory that carries the stylesheet name (#34)', (t) => {
+  const caller = tempDir(t);
+  const config = tempDir(t);
+  writeFile(caller, 'custom.css/keep', '');
+  const custom = writeFile(config, 'custom.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: caller });
+
+  assert.equal(resolveOptions(parse(['-s', 'custom.css', 'doc.md'])).stylesheet, custom);
+});
+
+test('lists every tried location for an unknown stylesheet name (#34)', (t) => {
+  const caller = tempDir(t);
+  const config = tempDir(t);
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: caller });
+
+  assert.throws(() => resolveOptions(parse(['-s', 'missing', 'doc.md'])), {
+    message: [
+      'Stylesheet not found: missing',
+      'Tried:',
+      `  - ${path.join(caller, 'missing')}`,
+      `  - ${path.join(config, 'missing')}`,
+      `  - ${path.join(config, 'missing.css')}`,
+    ].join('\n'),
+  });
 });

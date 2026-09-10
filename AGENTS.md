@@ -69,9 +69,10 @@ its own module rather than being `export`ed out of a file that also does I/O.
 `merge-assembly.ts` (concatenation and common-ancestor computation, out of
 `merge-markdown.ts`), `option-values.ts` (`--css-var` / `--merge`
 validation, out of `resolve-options.ts`), `css-import-conditions.ts`
-(`@import` layer/supports/media parsing, out of `resolve-stylesheet.ts`) and
+(`@import` layer/supports/media parsing, out of `resolve-stylesheet.ts`),
 `npx-invocation.ts` (the shell-free npx lookup and error formatting, out of
-`run-npx.ts`) all follow that split: the step file
+`run-npx.ts`) and `stylesheet-lookup.ts` (the `-s` lookup order, out of
+`resolve-options.ts`) all follow that split: the step file
 keeps the filesystem work, the extracted module keeps the rules.
 
 ## Architecture
@@ -162,6 +163,20 @@ Because the renderer only sees the work directory, a relative image reference in
 
 A side effect worth knowing: the `--debug` HTML is now self-contained, so it renders correctly even when `-o` puts it somewhere other than the source directory.
 
+### Stylesheet lookup (`src/steps/stylesheet-lookup.ts`)
+
+`resolveOptions` resolves `-s <value>` through `findStylesheet`, taking the first candidate that is a regular file:
+
+1. `<value>` as a path, resolved against the caller's directory: `MD2PDF_INVOCATION_DIR` when set (the global wrapper sets it, see *Global wrapper*), otherwise `process.cwd()`. No extension is ever added here.
+2. For a bare name only — no `/` or `\`, no drive prefix, not `.` / `..` — `<config dir>/<value>`.
+3. For a bare name that does not end in `.css` (case-insensitive), `<config dir>/<value>.css`.
+
+The config directory is `MD2PDF_CONFIG_DIR` when set and non-empty, otherwise `~/.md2pdf` (`os.homedir()`). Stylesheets live directly in it; subdirectories are never searched for the `-s` name, although a stylesheet found there may still `@import` files from its subdirectories (see *CSS variable system*). A directory that carries the stylesheet's name is skipped. The match is passed on as an absolute path, since a relative value now refers to the caller's directory rather than the process working directory.
+
+When nothing matches, a path value keeps the single-line `Stylesheet not found: <path>` error, and a bare name lists every location that was tried. Without `-s`, the bundled `src/css/default.css` is used; a per-user default stylesheet is tracked in #40.
+
+Tests must never touch the real home directory: the lookup rules take both directories and an `isFile` callback as parameters, and the `resolveOptions` tests point both environment variables at temp directories.
+
 ### CSS variable system
 
 `src/css/default.css` defines all CSS custom properties. `--css-var name=value` (repeatable, leading `--` optional) injects overrides into a `:root {}` block appended to the base stylesheet in a merged temp file (`style-overrides.css`). Key properties:
@@ -207,7 +222,9 @@ Mermaid diagrams render to SVG by default. The `--png` flag switches mermaid-cli
 
 `bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to `pnpm --silent md2pdf`. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `scripts/install.ps1`; remove via `scripts/uninstall.ps1`.
 
-The wrapper classifies each CLI argument before forwarding it: path options (`-s`, `-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`--css-var`, `--merge`) have their value forwarded verbatim, in both the space-separated and the `--option=value` inline form; flags and positional arguments are resolved as paths or passed as-is. Positional arguments are resolved to absolute paths whether they are files or directories.
+The wrapper classifies each CLI argument before forwarding it: path options (`-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`-s`, `--css-var`, `--merge`, and their long forms) have their value forwarded verbatim, in both the space-separated and the `--option=value` inline form; flags and positional arguments are resolved as paths or passed as-is. Positional arguments are resolved to absolute paths whether they are files or directories.
+
+`-s/--stylesheet` is a passthrough option because its value may be a bare name from `~/.md2pdf` (see *Stylesheet lookup*), which only `md2pdf` itself can tell apart from a path. Instead of resolving it, the wrapper exports the caller's directory as `MD2PDF_INVOCATION_DIR` for the duration of the call and restores the previous value in its `finally` block: a script run from an interactive PowerShell shares that session's environment, and a stale value would redirect later direct `pnpm md2pdf` runs.
 
 Option lookup uses ordinal (case-sensitive) `HashSet`s built by `New-OrdinalSet`. PowerShell's `@{}` hashtables and the `-contains` operator both compare case-insensitively, which would make the valueless flag `-R/--recursive` collide with the path option `-r/--temp-root` and swallow the next argument as a path.
 

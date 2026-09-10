@@ -20,6 +20,7 @@ The command shows a compact progress view, refreshes an existing doctoc table of
 - [Additional usage information](#additional-usage-information)
   - [Converting Folders](#converting-folders)
   - [Merging Into One PDF](#merging-into-one-pdf)
+  - [Personal Stylesheets](#personal-stylesheets)
   - [Manual Page Breaks](#manual-page-breaks)
   - [Table of Contents Markers](#table-of-contents-markers)
   - [Mermaid Diagram Syntax](#mermaid-diagram-syntax)
@@ -129,7 +130,7 @@ md2pdf --png README.md
 |---------------------------|-----------------------------------------------------------------------------------------------------------|
 | `-R, --recursive`         | Also expand subfolders of folder arguments. Skips `node_modules`, `.git`, and folders starting with a dot. |
 | `--merge <name>`          | Combine all resolved Markdown files into one PDF with this base name. The `.pdf` suffix is optional.      |
-| `-s, --stylesheet <file>` | Stylesheet for the generated PDF. Defaults to `src/css/default.css`. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
+| `-s, --stylesheet <file>` | Stylesheet for the generated PDF: a path, or the name of a stylesheet in `~/.md2pdf` (see [Personal Stylesheets](#personal-stylesheets)). Defaults to `src/css/default.css`. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
 | `--css-var <name=value>`  | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. |
 | `-o, --output-dir <dir>`  | Output directory for PDFs. Defaults to each Markdown file's directory, or to the common parent folder of all inputs with `--merge`. |
 | `-r, --temp-root <dir>`   | Root directory for temporary work dirs. Defaults to the system temp directory.                            |
@@ -184,6 +185,33 @@ Merging happens on the Markdown, before rendering, and the normal conversion the
 - Each document starts on a new page. The page break is produced by the `.document-break` helper in the default stylesheet. If you pass your own stylesheet with `-s`, add a matching rule or the documents will run together. To flatten the breaks, use `--css-var document-page-break-before=auto --css-var document-break-before=auto`.
 
 > **Limitation**: relative link and image targets are not rewritten when documents are merged. All documents share one base location, so a `![](images/logo.png)` written relative to a subfolder will not resolve in the merged PDF. `md2pdf` prints a warning whenever the merged inputs come from more than one folder. Use absolute paths or URLs for assets in documents you intend to merge.
+
+### Personal Stylesheets
+
+Stylesheets you use for many documents can live in a personal config folder, so `-s` finds them by name from any directory:
+
+- Windows: `%USERPROFILE%\.md2pdf`
+- macOS/Linux: `~/.md2pdf`
+
+```text
+~/.md2pdf/
+├── custom.css
+└── letter.css
+```
+
+```powershell
+md2pdf -s custom.css report.md   # uses ~/.md2pdf/custom.css
+md2pdf -s letter invite.md       # uses ~/.md2pdf/letter.css, ".css" is optional here
+```
+
+`-s` looks in this order:
+
+1. The value as a path, relative to the folder you run `md2pdf` from. A matching file there always wins, and `.css` is never added to it.
+2. `~/.md2pdf/<name>`, then `~/.md2pdf/<name>.css`. This only applies to a plain name. `-s ./custom.css` or `-s themes/dark.css` never looks in the config folder, and subfolders of the config folder are not searched.
+
+If nothing matches, the error lists every location that was tried. Set the `MD2PDF_CONFIG_DIR` environment variable to use a different folder.
+
+A stylesheet in the config folder may `@import` other files and use `url()` for fonts and images. Relative references resolve against the folder of the file they appear in, including subfolders such as `~/.md2pdf/theme/`. Put remote imports such as web fonts at the very top of the file you pass with `-s`: after a local `@import` they are currently ignored.
 
 ### Manual Page Breaks
 
