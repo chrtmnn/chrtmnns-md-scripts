@@ -1,7 +1,9 @@
 /**
- * Behaviour of the self-contained merged stylesheet from #22 / PR #27:
+ * Behaviour of the self-contained effective stylesheet from #22 / PR #27:
  * recursive `@import` inlining resolved per file, `url()` targets encoded as
  * `data:` URIs, and everything that already resolves on its own left alone.
+ * Since #29 this applies with and without `--css-var` overrides; since #36 an
+ * inlined import keeps its `layer()` / `supports()` / media conditions.
  */
 
 import fs from 'fs';
@@ -30,7 +32,21 @@ function merged(dir: string, stylesheet: string): string {
   return fs.readFileSync(output, 'utf8');
 }
 
-test('returns the base stylesheet unchanged when there are no overrides', (t) => {
+/**
+ * Runs `resolveStylesheet` without overrides, asserts that a self-contained
+ * copy was written, and reads it.
+ *
+ * @param dir - Directory the self-contained stylesheet is written into.
+ * @param stylesheet - Base stylesheet path.
+ * @returns The self-contained stylesheet text.
+ */
+function inlinedWithoutOverrides(dir: string, stylesheet: string): string {
+  const output = resolveStylesheet(makeOptions({ stylesheet }), dir);
+  assert.equal(comparablePath(output!), comparablePath(path.join(dir, 'style-overrides.css')));
+  return fs.readFileSync(output!, 'utf8');
+}
+
+test('returns the base stylesheet unchanged when there is nothing to inline or override', (t) => {
   const dir = tempDir(t);
   const stylesheet = writeFile(dir, 'base.css', 'body { color: red; }\n');
 
@@ -38,6 +54,43 @@ test('returns the base stylesheet unchanged when there are no overrides', (t) =>
 
   assert.equal(result, stylesheet);
   assert.equal(fs.existsSync(path.join(dir, 'style-overrides.css')), false);
+});
+
+test('returns a stylesheet with only remote and fragment references unchanged when there are no overrides', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(
+    dir,
+    'base.css',
+    '@import url("https://example.com/remote.css");\n.c { fill: url(#gradient); }\n',
+  );
+
+  const result = resolveStylesheet(makeOptions({ stylesheet }), dir);
+
+  assert.equal(result, stylesheet);
+  assert.equal(fs.existsSync(path.join(dir, 'style-overrides.css')), false);
+});
+
+test('ignores @import and url() inside block comments instead of failing on them', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(
+    dir,
+    'base.css',
+    '/* @import "old.css"; */\n/* h1 { background: url(gone.png); } */\nbody { color: red; }\n/* unterminated url(gone.png)',
+  );
+
+  const result = resolveStylesheet(makeOptions({ stylesheet }), dir);
+
+  assert.equal(result, stylesheet, 'nothing live to resolve, so the fast path applies');
+});
+
+test('keeps comments verbatim while resolving the live references next to them', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'a.css', '/* url(gone.png) */ .a {}\n');
+  const stylesheet = writeFile(dir, 'base.css', '/* @import "old.css"; */\n@import "a.css";\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(css, '/* @import "old.css"; */\n/* url(gone.png) */ .a {}\n\n\n');
 });
 
 test('returns undefined when no stylesheet is configured and no overrides are given', (t) => {
@@ -80,6 +133,17 @@ test('inlines a local @import instead of leaving a relative reference behind (#2
   assert.equal(css.includes('@import'), false, 'no relative @import may survive');
 });
 
+test('inlines a local @import without any --css-var (#29)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'tokens.css', 'h1 { color: rgb(1, 2, 3); }\n');
+  const stylesheet = writeFile(dir, 'custom.css', '@import "./tokens.css";\nbody { font-family: sans-serif; }\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(css, 'h1 { color: rgb(1, 2, 3); }\n\nbody { font-family: sans-serif; }\n\n');
+  assert.equal(css.includes(':root {'), false, 'no override block without overrides');
+});
+
 test('inlines @import url(...) and quoted forms alike', (t) => {
   const dir = tempDir(t);
   writeFile(dir, 'a.css', '.a {}\n');
@@ -113,6 +177,38 @@ test('wraps an @import with a media clause in a matching @media block', (t) => {
 
   assert.equal(css.includes('@media print {'), true);
   assert.equal(css.includes('.p {}'), true);
+});
+
+test('wraps an @import with layer(), supports() and media in nested blocks (#36)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'base.css', '.b {}\n');
+  const stylesheet = writeFile(dir, 'custom.css', '@import "base.css" layer(base) supports(display: grid) print;\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(css.startsWith('@layer base {\n@supports (display: grid) {\n@media print {\n.b {}\n'), true);
+  assert.equal(css.includes('@media layer'), false, 'layer() must not end up in a media query');
+});
+
+test('wraps an @import with a bare layer keyword in an anonymous @layer block (#36)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'reset.css', '.r {}\n');
+  const stylesheet = writeFile(dir, 'custom.css', '@import url("reset.css") layer;\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(css.startsWith('@layer {\n.r {}\n'), true);
+});
+
+test('names the importing file when @import conditions are malformed (#36)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'base.css', '.b {}\n');
+  const stylesheet = writeFile(dir, 'custom.css', '@import "base.css" layer(base;\n');
+
+  assert.throws(
+    () => resolveStylesheet(makeOptions({ stylesheet }), dir),
+    /Unbalanced parentheses in @import conditions "layer\(base" in .*custom\.css/,
+  );
 });
 
 test('allows a diamond import and inlines the shared file for each path', (t) => {
@@ -160,6 +256,16 @@ test('reports a missing @import target by path', (t) => {
   );
 });
 
+test('reports a missing @import target without any --css-var (#29)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(dir, 'base.css', '@import "missing.css";\n');
+
+  assert.throws(
+    () => resolveStylesheet(makeOptions({ stylesheet }), dir),
+    /Stylesheet reference not found: .*missing\.css/,
+  );
+});
+
 test('encodes a local url() asset as a data URI (#22)', (t) => {
   const dir = tempDir(t);
   writePng(dir, 'assets/rule.png');
@@ -168,6 +274,17 @@ test('encodes a local url() asset as a data URI (#22)', (t) => {
   const css = merged(dir, stylesheet);
 
   assert.equal(css.includes(`url("data:image/png;base64,${PNG_BASE64}")`), true);
+});
+
+test('encodes a local url() asset without any --css-var (#29)', (t) => {
+  const dir = tempDir(t);
+  writePng(dir, 'assets/rule.png');
+  const stylesheet = writeFile(dir, 'urlonly.css', 'h1 { background-image: url("./assets/rule.png"); }\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(css.includes(`url("data:image/png;base64,${PNG_BASE64}")`), true);
+  assert.equal(css.includes('./assets/rule.png'), false, 'no relative url() may survive');
 });
 
 test('resolves a url() inside an imported file against that file own directory', (t) => {
@@ -227,6 +344,16 @@ test('reports a missing url() asset by path', (t) => {
 
   assert.throws(
     () => resolveStylesheet(makeOptions({ stylesheet, cssVars: CSS_VARS }), dir),
+    /Stylesheet asset not found: .*gone\.png/,
+  );
+});
+
+test('reports a missing url() asset without any --css-var instead of dropping it silently (#29)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(dir, 'base.css', 'h1 { background: url("gone.png"); }\n');
+
+  assert.throws(
+    () => resolveStylesheet(makeOptions({ stylesheet }), dir),
     /Stylesheet asset not found: .*gone\.png/,
   );
 });

@@ -68,9 +68,10 @@ its own module rather than being `export`ed out of a file that also does I/O.
 `toc-placement.ts` (TOC relocation rules, out of `run-doctoc.ts`),
 `merge-assembly.ts` (concatenation and common-ancestor computation, out of
 `merge-markdown.ts`), `option-values.ts` (`--css-var` / `--merge`
-validation, out of `resolve-options.ts`) and `npx-invocation.ts` (the
-shell-free npx lookup and error formatting, out of `run-npx.ts`) all follow
-that split: the step file
+validation, out of `resolve-options.ts`), `css-import-conditions.ts`
+(`@import` layer/supports/media parsing, out of `resolve-stylesheet.ts`) and
+`npx-invocation.ts` (the shell-free npx lookup and error formatting, out of
+`run-npx.ts`) all follow that split: the step file
 keeps the filesystem work, the extracted module keeps the rules.
 
 ## Architecture
@@ -102,7 +103,7 @@ All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContex
 | `inputMarkdown` | `prepareWorkdir` (source path) / `runDoctoc` (temp copy) | Path fed to mermaid-cli |
 | `convertedMarkdown` | `prepareWorkdir` | Output of mermaid-cli, input to md-to-pdf |
 | `docTitle` | `extractTitle` | `--document-title` passed to md-to-pdf |
-| `effectiveStylesheet` | `createStylesheet` | Final CSS path (base or merged with overrides) |
+| `effectiveStylesheet` | `createStylesheet` | Final CSS path (the base stylesheet as-is, or its self-contained copy with inlined references and overrides) |
 | `tempHtml` / `outputHtml` | `prepareWorkdir` | Debug HTML paths; populated by `renderHtml` and `copyOutput` only when `--debug` is set |
 
 ### Argument expansion (`src/steps/resolve-inputs.ts`)
@@ -165,7 +166,11 @@ A side effect worth knowing: the `--debug` HTML is now self-contained, so it ren
 
 `src/css/default.css` defines all CSS custom properties. `--css-var name=value` (repeatable, leading `--` optional) injects overrides into a `:root {}` block appended to the base stylesheet in a merged temp file (`style-overrides.css`). Key properties:
 
-md-to-pdf never references `--stylesheet` by path in the rendered page — it reads the file and injects its text into an inline `<style>` tag (puppeteer's `page.addStyleTag({ path })`), so any relative `@import` or `url()` in the base stylesheet would resolve against the page's own location (the `--basedir` HTTP server), not the stylesheet's directory on disk, regardless of where the merged file is written. `resolveStylesheet` (`src/steps/resolve-stylesheet.ts`) therefore makes the merged stylesheet fully self-contained before writing it out: local `@import` targets are inlined recursively (each resolved against its own file's directory, with diamond imports allowed and circular imports rejected), and local `url()` targets are rewritten to `data:` URIs. Remote (`http(s):`) references and existing `data:` URIs are left untouched.
+md-to-pdf never references `--stylesheet` by path in the rendered page — it reads the file and injects its text into an inline `<style>` tag (puppeteer's `page.addStyleTag({ path })`), so any relative `@import` or `url()` in the base stylesheet would resolve against the page's own location (the `--basedir` HTTP server), not the stylesheet's directory on disk, regardless of where the merged file is written. `resolveStylesheet` (`src/steps/resolve-stylesheet.ts`) therefore makes the stylesheet fully self-contained before writing it out: local `@import` targets are inlined recursively (each resolved against its own file's directory, with diamond imports allowed and circular imports rejected), and local `url()` targets are rewritten to `data:` URIs. Remote (`http(s):`) references and existing `data:` URIs are left untouched. A missing local target aborts the run with its path.
+
+This runs for every configured stylesheet, with or without `--css-var` — the breakage is inherent to how md-to-pdf consumes stylesheets, not to the overrides. The self-contained copy goes into a per-run `md2pdf_css_` temp directory as `style-overrides.css` (the name predates the change; the `:root {}` block is only appended when there are overrides). Fast path: without overrides and without any local reference to resolve, the original path is returned and nothing is written, so the bundled `default.css` is passed through as-is.
+
+An inlined `@import` keeps its conditions as wrapping blocks, nested in grammar order: `@import "x.css" layer(base) supports(display: grid) print;` becomes `@layer base { @supports (display: grid) { @media print { … } } }`. The tail parsing (`layer` / `layer(<name>)`, `supports(…)` with balanced parentheses, then the media query list) is in `src/steps/css-import-conditions.ts`; malformed tails (unbalanced parentheses, empty `layer()` / `supports()`) abort with the importing file named.
 
 | Variable | Default | Effect |
 |---|---|---|

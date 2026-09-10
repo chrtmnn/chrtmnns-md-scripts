@@ -117,16 +117,16 @@ async function run(options: ConverterOptions): Promise<void> {
     runOptions = { ...options, outputDir: merged.targetDir };
   }
 
-  // Resolve the effective stylesheet once for all files.
-  const cssTempDir = options.cssVars.length > 0
-    ? fs.mkdtempSync(path.join(os.tmpdir(), 'md2pdf_css_'))
-    : undefined;
+  // Resolve the effective stylesheet once for all files. The temp dir receives
+  // the self-contained copy when the stylesheet has local references to
+  // inline or overrides to append, and stays empty otherwise.
+  const cssTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2pdf_css_'));
 
   let convertedCount = 0;
   let failedCount = 0;
 
   try {
-    const effectiveStylesheet = resolveStylesheet(options, cssTempDir ?? os.tmpdir());
+    const effectiveStylesheet = resolveStylesheet(options, cssTempDir);
 
     for (const file of filesToConvert) {
       log.info(merged ? `${merged.mergedCount} documents merged` : path.resolve(file));
@@ -180,9 +180,7 @@ async function run(options: ConverterOptions): Promise<void> {
       }
     }
   } finally {
-    if (cssTempDir) {
-      fs.rmSync(cssTempDir, { recursive: true, force: true });
-    }
+    fs.rmSync(cssTempDir, { recursive: true, force: true });
 
     if (merged) {
       if (options.keepTemp) {
