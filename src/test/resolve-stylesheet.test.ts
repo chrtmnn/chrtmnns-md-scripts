@@ -3,7 +3,8 @@
  * recursive `@import` inlining resolved per file, `url()` targets encoded as
  * `data:` URIs, and everything that already resolves on its own left alone.
  * Since #29 this applies with and without `--css-var` overrides; since #36 an
- * inlined import keeps its `layer()` / `supports()` / media conditions.
+ * inlined import keeps its `layer()` / `supports()` / media conditions; since
+ * #38 a remote `@import` is hoisted to the top so the browser still honours it.
  */
 
 import fs from 'fs';
@@ -372,4 +373,234 @@ test('picks the MIME type from the extension and falls back for unknown ones', (
 
   assert.equal(css.includes('data:font/woff2;base64,'), true);
   assert.equal(css.includes('data:application/octet-stream;base64,'), true);
+});
+
+/** The remote stylesheet used by the hoisting scenarios from #38. */
+const REMOTE = 'https://example.com/remote.css';
+
+/**
+ * Asserts that a remote `@import` is the first thing in the stylesheet that a
+ * browser would parse, i.e. nothing but `@charset`, `@layer` statements,
+ * comments and other `@import`s precedes it.
+ *
+ * @param css - The effective stylesheet text.
+ * @param expected - The `@import` statement expected at the top, without `;`.
+ */
+function assertHoisted(css: string, expected: string): void {
+  assert.equal(css.includes(`${expected};`), true, `${expected}; is present\n---\n${css}`);
+
+  const before = css.slice(0, css.indexOf(expected));
+  const live = before
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/@charset\s+[^;]*;/gi, '')
+    .replace(/@layer\s+[^;{]*;/gi, '')
+    .replace(/@import\s+[^;]*;/gi, '')
+    .trim();
+
+  assert.equal(live, '', `nothing but @charset/@layer statements precede the import, found: ${live}`);
+}
+
+test('hoists a remote @import above a local one inlined before it (#38, S1)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'local.css', '.local {}\n');
+  const stylesheet = writeFile(dir, 'base.css', `@import "local.css";\n@import url(${REMOTE});\n`);
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE})`);
+  assert.equal(css.includes('.local {}'), true, 'the local import is still inlined');
+});
+
+test('hoists a remote @import out of a file imported after another (#38, S2)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'tokens.css', ':root { --brand: red; }\n');
+  writeFile(dir, 'fonts.css', `@import url(${REMOTE});\n`);
+  const stylesheet = writeFile(dir, 'base.css', '@import "tokens.css";\n@import "fonts.css";\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE})`);
+  assert.equal(css.includes(':root { --brand: red; }'), true);
+});
+
+test('hoists a remote @import out of a layer() block, keeping the layer (#38, S3)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'fonts.css', `@import url(${REMOTE});\n`);
+  const stylesheet = writeFile(dir, 'base.css', '@import "fonts.css" layer(fonts);\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE}) layer(fonts)`);
+});
+
+test('hoists a remote @import out of a @media block, keeping the query (#38, S4)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'fonts.css', `@import url(${REMOTE});\n`);
+  const stylesheet = writeFile(dir, 'base.css', '@import "fonts.css" print;\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE}) print`);
+});
+
+test('composes the conditions of the chain and the remote import itself (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'fonts.css', `@import url(${REMOTE}) layer(inner) screen;\n`);
+  const stylesheet = writeFile(dir, 'base.css', '@import "fonts.css" layer(outer);\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE}) layer(outer.inner) screen`);
+});
+
+test('keeps a remote @import below a @charset and leading @layer statements (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'fonts.css', `@import url(${REMOTE});\n`);
+  const stylesheet = writeFile(
+    dir,
+    'base.css',
+    '@charset "utf-8";\n@layer a, b;\nbody { color: red; }\n@import "fonts.css";\n',
+  );
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.match(css, /^@charset "utf-8";\n@layer a, b;\n@import url\([^)]+\);\nbody \{ color: red; \}/);
+});
+
+test('hoists several remote @imports and keeps their source order (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'fonts.css', '@import url(https://example.com/b.css);\n.font {}\n');
+  const stylesheet = writeFile(
+    dir,
+    'base.css',
+    'body { color: red; }\n@import "fonts.css";\n@import url(https://example.com/c.css);\n',
+  );
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.match(css, /^@import url\(https:\/\/example\.com\/b\.css\);\n@import url\(https:\/\/example\.com\/c\.css\);\n/);
+});
+
+test('hoists a remote @import alongside --css-var overrides (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'local.css', '.local {}\n');
+  const stylesheet = writeFile(dir, 'base.css', `@import "local.css";\n@import url(${REMOTE});\n`);
+
+  const css = merged(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE})`);
+  assert.equal(css.includes('--font-text: "Aptos";'), true, 'the overrides are still appended');
+});
+
+test('leaves a remote @import inside a block comment alone (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'local.css', '.local {}\n');
+  const stylesheet = writeFile(dir, 'base.css', `/* @import url(${REMOTE}); */\n@import "local.css";\n`);
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(css, `/* @import url(${REMOTE}); */\n.local {}\n\n\n`);
+});
+
+test('names the importing file when a hoisted import cannot keep its conditions (#38)', (t) => {
+  const dir = tempDir(t);
+  const fonts = writeFile(dir, 'fonts.css', `@import url(${REMOTE}) layer;\n`);
+  const stylesheet = writeFile(dir, 'base.css', '@import "fonts.css" layer(outer);\n');
+
+  assert.throws(
+    () => resolveStylesheet(makeOptions({ stylesheet }), dir),
+    (error: Error) =>
+      /anonymous cascade layer/.test(error.message) && error.message.includes(path.basename(fonts)),
+  );
+});
+
+test('rejects media queries that cannot be combined, naming the file (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'fonts.css', `@import url(${REMOTE}) screen;\n`);
+  const stylesheet = writeFile(dir, 'base.css', '@import "fonts.css" print;\n');
+
+  assert.throws(
+    () => resolveStylesheet(makeOptions({ stylesheet }), dir),
+    /Cannot combine the media queries "screen" and "print"/,
+  );
+});
+
+test('hoists a remote @import only once when a diamond reaches it twice (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'shared.css', `@import url(${REMOTE});\n.s {}\n`);
+  writeFile(dir, 'left.css', '@import "shared.css";\n.l {}\n');
+  writeFile(dir, 'right.css', '@import "shared.css";\n.r {}\n');
+  const stylesheet = writeFile(dir, 'base.css', '@import "left.css";\n@import "right.css";\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE})`);
+  assert.equal(css.match(/@import/g)?.length, 1, 'the statement appears exactly once');
+  assert.equal(css.match(/\.s \{\}/g)?.length, 2, 'the shared file is still inlined for each path');
+});
+
+test('leaves an empty wrapper behind when a conditioned import held only the remote one (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'fonts.css', `@import url(${REMOTE});\n`);
+  const stylesheet = writeFile(dir, 'base.css', '@import "fonts.css" print;\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  // Valid CSS that affects nothing, but pinned so the shape is not a surprise.
+  assert.match(css, /@media print \{\s*\}/);
+});
+
+test('hoists from a stylesheet with no trailing newline (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'local.css', '.local {}');
+  const stylesheet = writeFile(dir, 'base.css', `@import "local.css";\n@import url(${REMOTE});`);
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE})`);
+  assert.equal(css.includes('.local {}'), true);
+});
+
+test('matches @import case-insensitively, as CSS does (#38)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(dir, 'base.css', `body { color: red; }\n@IMPORT URL("${REMOTE}");\n`);
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@IMPORT URL("${REMOTE}")`);
+});
+
+test('inlines an uppercase @IMPORT of a local target instead of data-encoding it (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'local.css', '.local {}\n');
+  const stylesheet = writeFile(dir, 'base.css', '@IMPORT "local.css";\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(css.includes('.local {}'), true);
+  assert.equal(css.includes('data:'), false, 'the url() pass must not claim it first');
+});
+
+test('ignores an @import missing its semicolon instead of relocating later rules (#38)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(
+    dir,
+    'base.css',
+    `.x { color: blue; }\n@import url("${REMOTE}")\nbody { color: red; }\n.y {}\n`,
+  );
+
+  const result = resolveStylesheet(makeOptions({ stylesheet }), dir);
+
+  // The condition tail stops at a brace, so the statement simply does not match
+  // and the file is passed through rather than rewritten around a bogus match.
+  assert.equal(result, stylesheet);
+});
+
+test('leaves a remote @import inside an unterminated comment alone (#38)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(dir, 'base.css', `body { color: red; }\n/* @import url(${REMOTE});`);
+
+  const result = resolveStylesheet(makeOptions({ stylesheet }), dir);
+
+  assert.equal(result, stylesheet, 'nothing live to hoist, so the fast path applies');
 });

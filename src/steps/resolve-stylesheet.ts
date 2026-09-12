@@ -1,7 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { ConverterOptions } from '../types';
-import { parseImportConditions, wrapInImportConditions } from './css-import-conditions';
+import {
+  composeImportConditions,
+  formatImportConditions,
+  ImportConditions,
+  parseImportConditions,
+  wrapInImportConditions,
+} from './css-import-conditions';
+import { HOISTED_IMPORT_MARKER, hoistRemoteImports, restateImport } from './css-import-hoisting';
 
 /**
  * MIME types for local assets that get inlined as `data:` URIs, keyed by
@@ -24,8 +31,15 @@ const DATA_URI_MIME_TYPES: Record<string, string> = {
 
 // Matches `@import "x";`, `@import 'x';` and `@import url(x);`, capturing the
 // optional trailing conditions (`layer(base)`, `supports(...)`, `print`, ...),
-// which `parseImportConditions` splits up.
-const IMPORT_PATTERN = /@import\s+(?:url\(\s*(['"]?)([^'")]*)\1\s*\)|(['"])([^'"]*)\3)\s*([^;]*);/g;
+// which `parseImportConditions` splits up. At-keywords and function tokens are
+// case-insensitive in CSS, so `@IMPORT URL(x)` has to match too.
+//
+// The condition tail excludes `{` and `}`: without that, an `@import` whose `;`
+// the author forgot would match on to the next `;` anywhere in the file,
+// swallowing whole rules into a bogus "statement" that hoisting would then
+// relocate. Conditions never contain braces, so nothing legitimate is lost and
+// a statement missing its `;` simply does not match.
+const IMPORT_PATTERN = /@import\s+(?:url\(\s*(['"]?)([^'")]*)\1\s*\)|(['"])([^'"]*)\3)\s*([^;{}]*);/gi;
 
 // Matches `url(x)` in any quoting style (used for @font-face src, background
 // images, etc.). Deliberately excludes `@import url(...)`, which the pattern
@@ -48,7 +62,13 @@ const COMMENT_PATTERN = /(\/\*[\s\S]*?(?:\*\/|$))/;
  * against each imported file's own directory) and local `url()` targets are
  * rewritten to `data:` URIs, so the effective stylesheet is fully
  * self-contained and needs no relative-path resolution at render time.
- * Remote (`http(s):`) and `data:` references are left untouched.
+ * Remote `url()` and existing `data:` references are left untouched.
+ *
+ * Remote `@import`s are left remote but are hoisted to the top of the result
+ * (#38): a browser honours an `@import` only where it precedes every other
+ * rule and sits outside any block, which inlining the imports around it would
+ * otherwise break, silently and without an error. See
+ * {@link hoistRemoteImports}.
  *
  * This happens for every configured stylesheet, with or without CSS variable
  * overrides. The self-contained copy is written into `dir`, with the
@@ -65,7 +85,7 @@ export function resolveStylesheet(options: ConverterOptions, dir: string): strin
 
   if (options.stylesheet) {
     const stylesheetPath = path.resolve(options.stylesheet);
-    const css = inlineLocalReferences(stylesheetPath, new Set());
+    const css = makeSelfContained(stylesheetPath);
 
     if (options.cssVars.length === 0 && css === fs.readFileSync(stylesheetPath, 'utf8')) {
       return options.stylesheet;
@@ -92,18 +112,47 @@ export function resolveStylesheet(options: ConverterOptions, dir: string): strin
 }
 
 /**
+ * Turns a stylesheet into the self-contained CSS that can be injected as a
+ * `<style>` tag: local references resolved, remote `@import`s hoisted to the
+ * top.
+ *
+ * @param stylesheetPath - Absolute path of the base stylesheet.
+ * @returns The self-contained CSS text.
+ */
+function makeSelfContained(stylesheetPath: string): string {
+  const hoisted: string[] = [];
+  const inlined = inlineLocalReferences(stylesheetPath, new Set(), [], hoisted);
+
+  return hoistRemoteImports(inlined, hoisted);
+}
+
+/**
  * Reads a CSS file and recursively inlines local `@import` targets and
  * `data:`-encodes local `url()` targets, resolving each relative reference
  * against the directory of the file it appears in. An inlined import keeps
  * its `layer()`, `supports()` and media conditions as wrapping blocks.
  * References inside block comments are not live and are left alone.
  *
+ * A remote `@import` cannot stay where it is — it would end up below other
+ * rules or inside one of those wrapping blocks, where the browser drops it
+ * (#38). It is replaced by a marker and collected in `hoisted` instead, with
+ * the conditions of the whole import chain folded into its own tail, for
+ * {@link hoistRemoteImports} to re-emit at the top.
+ *
  * @param filePath - Absolute path of the CSS file to read.
  * @param ancestors - Absolute paths of files currently being resolved in the
  *   current import chain, used to detect circular `@import`s.
+ * @param chain - Conditions of the `@import`s this file was reached through,
+ *   outermost first.
+ * @param hoisted - Collects the remote `@import` statements, in source order.
  * @returns The file's CSS text with all local references resolved.
  */
-function inlineLocalReferences(filePath: string, ancestors: Set<string>): string {
+function inlineLocalReferences(
+  filePath: string,
+  ancestors: Set<string>,
+  chain: ImportConditions[],
+  hoisted: string[],
+): string {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Stylesheet reference not found: ${filePath}`);
   }
@@ -117,19 +166,18 @@ function inlineLocalReferences(filePath: string, ancestors: Set<string>): string
 
   css = replaceOutsideComments(css, IMPORT_PATTERN, (match, _urlQuote, urlTarget, _stringQuote, stringTarget, conditionText) => {
     const target = urlTarget || stringTarget;
-    if (!isLocalReference(target)) {
-      return match;
-    }
+    const conditions = inFile(filePath, () => parseImportConditions(conditionText));
 
-    let conditions;
-    try {
-      conditions = parseImportConditions(conditionText);
-    } catch (error) {
-      throw new Error(`${error instanceof Error ? error.message : String(error)} in ${filePath}`);
+    if (!isLocalReference(target)) {
+      const composed = inFile(filePath, () => composeImportConditions([...chain, conditions]));
+      hoisted.push(restateImport(match, conditionText, formatImportConditions(composed)));
+      return HOISTED_IMPORT_MARKER;
     }
 
     const importedPath = path.resolve(dir, target);
-    return wrapInImportConditions(inlineLocalReferences(importedPath, ancestors), conditions);
+    const imported = inlineLocalReferences(importedPath, ancestors, [...chain, conditions], hoisted);
+
+    return wrapInImportConditions(imported, conditions);
   });
 
   css = replaceOutsideComments(css, URL_PATTERN, (match, _quote, target) => {
@@ -149,6 +197,24 @@ function inlineLocalReferences(filePath: string, ancestors: Set<string>): string
 
   ancestors.delete(filePath);
   return css;
+}
+
+/**
+ * Runs a step of the `@import` resolution and names the offending file in
+ * whatever it throws, so a malformed or uncomposable condition points at the
+ * stylesheet that carries it.
+ *
+ * @param filePath - Absolute path of the CSS file being resolved.
+ * @param step - The step to run.
+ * @returns The step's result.
+ * @throws The step's error, with the file path appended.
+ */
+function inFile<T>(filePath: string, step: () => T): T {
+  try {
+    return step();
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)} in ${filePath}`);
+  }
 }
 
 /**
