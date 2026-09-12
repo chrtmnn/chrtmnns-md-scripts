@@ -188,24 +188,40 @@ type MediaQuery = { type?: string; conditions: string[] };
  * Combines two media query lists into the list that matches where both hold,
  * as a cross product with the inner list's queries leading each pair.
  *
+ * A pair that cannot hold at once contributes nothing and is dropped, so
+ * `print` inside `print, screen` composes to `print` rather than failing on
+ * the `screen`/`print` pair. Only when *no* pair survives is there nothing
+ * left to express, and the composition fails.
+ *
  * @param inner - Media query list of the inner `@import`.
  * @param outer - Media query list of the enclosing `@import`.
  * @returns The combined media query list.
- * @throws When any pair of queries cannot be combined into one.
+ * @throws When the two lists have no combinable pair at all.
  */
 function combineMediaLists(inner: string, outer: string): string {
-  const combined: string[] = [];
+  const inners = splitMediaQueryList(inner);
+  const outers = splitMediaQueryList(outer);
 
-  for (const innerQuery of splitMediaQueryList(inner)) {
-    for (const outerQuery of splitMediaQueryList(outer)) {
+  if (inners.length === 0 || outers.length === 0) {
+    throw new Error(
+      `Cannot combine the media query lists "${inner.trim()}" and "${outer.trim()}" of a hoisted remote @import`,
+    );
+  }
+
+  const combined: string[] = [];
+  for (const innerQuery of inners) {
+    for (const outerQuery of outers) {
       const pair = combineMediaQueries(innerQuery, outerQuery);
-      if (pair === null) {
-        throw new Error(
-          `Cannot combine the media queries "${innerQuery}" and "${outerQuery}" of a hoisted remote @import`,
-        );
+      if (pair !== null) {
+        combined.push(pair);
       }
-      combined.push(pair);
     }
+  }
+
+  if (combined.length === 0) {
+    throw new Error(
+      `Cannot combine the media queries "${inners.join(', ')}" and "${outers.join(', ')}" of a hoisted remote @import`,
+    );
   }
 
   return combined.join(', ');
@@ -219,6 +235,16 @@ function combineMediaLists(inner: string, outer: string): string {
  * @returns The combined query, or `null` when the two cannot be combined.
  */
 function combineMediaQueries(inner: string, outer: string): string | null {
+  // `all` on its own adds no constraint, so the other side stands as written —
+  // checked before parsing, so it also works against a `not` / `only` query
+  // that could not be combined with anything narrower.
+  if (inner.trim().toLowerCase() === 'all') {
+    return outer.trim();
+  }
+  if (outer.trim().toLowerCase() === 'all') {
+    return inner.trim();
+  }
+
   const first = parseMediaQuery(inner);
   const second = parseMediaQuery(outer);
   if (!first || !second) {
@@ -262,6 +288,10 @@ function parseMediaQuery(query: string): MediaQuery | null {
     .map((part) => part.trim())
     .filter((part) => part !== '');
 
+  // Defensive, and currently unreachable: `trimmed` is non-empty and has no
+  // leading whitespace, while the separator requires some, so the first part is
+  // always non-empty. Kept because an empty parse would render as an empty
+  // query and silently widen the condition instead of failing.
   if (parts.length === 0) {
     return null;
   }
@@ -272,13 +302,22 @@ function parseMediaQuery(query: string): MediaQuery | null {
       parsed.type = part;
       continue;
     }
-    // Anything else has to be a parenthesised feature query. A bare word here
-    // is a second media type or a malformed query, and `and`-ing it would
-    // produce an `@import` the browser drops again.
-    if (!part.startsWith('(')) {
-      return null;
+    // Anything else has to be a parenthesised feature query, optionally negated
+    // (`screen and not (hover)` is valid Media Queries 4). A bare word here is
+    // a second media type or a malformed query, and `and`-ing it would produce
+    // an `@import` the browser drops again.
+    if (part.startsWith('(')) {
+      parsed.conditions.push(part);
+      continue;
     }
-    parsed.conditions.push(part);
+    if (/^not\s*\(/i.test(part)) {
+      // A bare `not (...)` may not be followed by another `and`, so wrap it as
+      // a parenthesised condition to keep it combinable in any position.
+      parsed.conditions.push(`(${part})`);
+      continue;
+    }
+
+    return null;
   }
 
   return parsed;

@@ -524,3 +524,83 @@ test('rejects media queries that cannot be combined, naming the file (#38)', (t)
     /Cannot combine the media queries "screen" and "print"/,
   );
 });
+
+test('hoists a remote @import only once when a diamond reaches it twice (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'shared.css', `@import url(${REMOTE});\n.s {}\n`);
+  writeFile(dir, 'left.css', '@import "shared.css";\n.l {}\n');
+  writeFile(dir, 'right.css', '@import "shared.css";\n.r {}\n');
+  const stylesheet = writeFile(dir, 'base.css', '@import "left.css";\n@import "right.css";\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE})`);
+  assert.equal(css.match(/@import/g)?.length, 1, 'the statement appears exactly once');
+  assert.equal(css.match(/\.s \{\}/g)?.length, 2, 'the shared file is still inlined for each path');
+});
+
+test('leaves an empty wrapper behind when a conditioned import held only the remote one (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'fonts.css', `@import url(${REMOTE});\n`);
+  const stylesheet = writeFile(dir, 'base.css', '@import "fonts.css" print;\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  // Valid CSS that affects nothing, but pinned so the shape is not a surprise.
+  assert.match(css, /@media print \{\s*\}/);
+});
+
+test('hoists from a stylesheet with no trailing newline (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'local.css', '.local {}');
+  const stylesheet = writeFile(dir, 'base.css', `@import "local.css";\n@import url(${REMOTE});`);
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@import url(${REMOTE})`);
+  assert.equal(css.includes('.local {}'), true);
+});
+
+test('matches @import case-insensitively, as CSS does (#38)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(dir, 'base.css', `body { color: red; }\n@IMPORT URL("${REMOTE}");\n`);
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assertHoisted(css, `@IMPORT URL("${REMOTE}")`);
+});
+
+test('inlines an uppercase @IMPORT of a local target instead of data-encoding it (#38)', (t) => {
+  const dir = tempDir(t);
+  writeFile(dir, 'local.css', '.local {}\n');
+  const stylesheet = writeFile(dir, 'base.css', '@IMPORT "local.css";\n');
+
+  const css = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(css.includes('.local {}'), true);
+  assert.equal(css.includes('data:'), false, 'the url() pass must not claim it first');
+});
+
+test('ignores an @import missing its semicolon instead of relocating later rules (#38)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(
+    dir,
+    'base.css',
+    `.x { color: blue; }\n@import url("${REMOTE}")\nbody { color: red; }\n.y {}\n`,
+  );
+
+  const result = resolveStylesheet(makeOptions({ stylesheet }), dir);
+
+  // The condition tail stops at a brace, so the statement simply does not match
+  // and the file is passed through rather than rewritten around a bogus match.
+  assert.equal(result, stylesheet);
+});
+
+test('leaves a remote @import inside an unterminated comment alone (#38)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(dir, 'base.css', `body { color: red; }\n/* @import url(${REMOTE});`);
+
+  const result = resolveStylesheet(makeOptions({ stylesheet }), dir);
+
+  assert.equal(result, stylesheet, 'nothing live to hoist, so the fast path applies');
+});

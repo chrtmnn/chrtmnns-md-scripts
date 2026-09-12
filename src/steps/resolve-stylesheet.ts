@@ -8,6 +8,7 @@ import {
   parseImportConditions,
   wrapInImportConditions,
 } from './css-import-conditions';
+import { HOISTED_IMPORT_MARKER, hoistRemoteImports, restateImport } from './css-import-hoisting';
 
 /**
  * MIME types for local assets that get inlined as `data:` URIs, keyed by
@@ -30,8 +31,15 @@ const DATA_URI_MIME_TYPES: Record<string, string> = {
 
 // Matches `@import "x";`, `@import 'x';` and `@import url(x);`, capturing the
 // optional trailing conditions (`layer(base)`, `supports(...)`, `print`, ...),
-// which `parseImportConditions` splits up.
-const IMPORT_PATTERN = /@import\s+(?:url\(\s*(['"]?)([^'")]*)\1\s*\)|(['"])([^'"]*)\3)\s*([^;]*);/g;
+// which `parseImportConditions` splits up. At-keywords and function tokens are
+// case-insensitive in CSS, so `@IMPORT URL(x)` has to match too.
+//
+// The condition tail excludes `{` and `}`: without that, an `@import` whose `;`
+// the author forgot would match on to the next `;` anywhere in the file,
+// swallowing whole rules into a bogus "statement" that hoisting would then
+// relocate. Conditions never contain braces, so nothing legitimate is lost and
+// a statement missing its `;` simply does not match.
+const IMPORT_PATTERN = /@import\s+(?:url\(\s*(['"]?)([^'")]*)\1\s*\)|(['"])([^'"]*)\3)\s*([^;{}]*);/gi;
 
 // Matches `url(x)` in any quoting style (used for @font-face src, background
 // images, etc.). Deliberately excludes `@import url(...)`, which the pattern
@@ -41,22 +49,6 @@ const URL_PATTERN = /url\(\s*(['"]?)([^'")]*)\1\s*\)/g;
 // A block comment, including an unterminated one that runs to the end of the
 // file. Captured so that `split` keeps the comments at the odd indices.
 const COMMENT_PATTERN = /(\/\*[\s\S]*?(?:\*\/|$))/;
-
-// Marks where a remote `@import` was lifted out of the inlined CSS, to be
-// re-emitted at the top. A NUL byte cannot occur in a stylesheet, so this can
-// never collide with real content.
-const HOISTED_IMPORT_MARKER = '\u0000hoisted-import\u0000';
-
-// The marker plus the remainder of its own line. Consuming the line break lets
-// an import that already sat at the top of the file be re-emitted
-// byte-for-byte, so the fast path in `resolveStylesheet` still applies to it.
-const HOISTED_IMPORT_MARKER_PATTERN = new RegExp(`${HOISTED_IMPORT_MARKER}[ \t]*\n?`, 'g');
-
-// What may precede an `@import` in the effective stylesheet: whitespace, block
-// comments, a leading `@charset`, and `@layer` *statements* (the `@layer a, b;`
-// form, which fixes layer order and must keep its position). A `@layer x { }`
-// block is a rule, so it does not match and the hoisted imports go above it.
-const HOIST_PREFIX_PATTERNS = [/^\s+/, /^\/\*[\s\S]*?\*\//, /^@charset\s+[^;]*;/i, /^@layer\s+[^;{]*;/i];
 
 /**
  * Resolves the stylesheet path for the entire run.
@@ -135,45 +127,6 @@ function makeSelfContained(stylesheetPath: string): string {
 }
 
 /**
- * Replaces the markers left by {@link inlineLocalReferences} with nothing and
- * re-emits the collected remote `@import`s at the first position where a
- * browser still honours them.
- *
- * That position is after a leading `@charset` and after any leading `@layer`
- * statements, which fix cascade-layer order and must keep their place. The
- * imports keep their source order among themselves, but a hoisted remote sheet
- * does move ahead of local rules that preceded it, so where both define the
- * same selector the local rule now wins. Exact source order cannot be
- * preserved: inlined content has to follow the `@import`s, not precede them.
- *
- * @param css - Inlined CSS still carrying the markers.
- * @param hoisted - The `@import` statements to re-emit, in source order.
- * @returns The CSS with the markers removed and the imports placed at the top.
- */
-function hoistRemoteImports(css: string, hoisted: string[]): string {
-  const stripped = css.replace(HOISTED_IMPORT_MARKER_PATTERN, '');
-  if (hoisted.length === 0) {
-    return stripped;
-  }
-
-  let index = 0;
-  for (let matched = true; matched; ) {
-    matched = false;
-    for (const pattern of HOIST_PREFIX_PATTERNS) {
-      const match = pattern.exec(stripped.slice(index));
-      if (match) {
-        index += match[0].length;
-        matched = true;
-        break;
-      }
-    }
-  }
-
-  const imports = hoisted.map((statement) => `${statement}\n`).join('');
-  return `${stripped.slice(0, index)}${imports}${stripped.slice(index)}`;
-}
-
-/**
  * Reads a CSS file and recursively inlines local `@import` targets and
  * `data:`-encodes local `url()` targets, resolving each relative reference
  * against the directory of the file it appears in. An inlined import keeps
@@ -244,30 +197,6 @@ function inlineLocalReferences(
 
   ancestors.delete(filePath);
   return css;
-}
-
-/**
- * Rewrites a matched `@import` statement to carry a different condition tail,
- * keeping the target exactly as it was written.
- *
- * The statement is returned untouched when the tail is unchanged, so a remote
- * `@import` that needs no composed conditions is re-emitted byte-for-byte.
- *
- * @param statement - The full matched `@import ...;` text.
- * @param conditionText - The raw condition tail captured from it.
- * @param tail - The tail to use instead.
- * @returns The `@import` statement with the new tail.
- */
-function restateImport(statement: string, conditionText: string, tail: string): string {
-  if (tail === conditionText.trim()) {
-    return statement;
-  }
-
-  // `statement` is `@import <target><conditionText>;`, so dropping the tail and
-  // the `;` leaves the target spelled exactly as the author wrote it.
-  const target = statement.slice(0, statement.length - conditionText.length - 1).trimEnd();
-
-  return tail ? `${target} ${tail};` : `${target};`;
 }
 
 /**

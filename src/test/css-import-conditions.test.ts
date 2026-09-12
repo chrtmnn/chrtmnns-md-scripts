@@ -140,6 +140,78 @@ test('treats "all" as the media type that never conflicts (#38)', () => {
   assert.deepEqual(composeImportConditions([{ media: 'PRINT' }, { media: 'print' }]), { media: 'print' });
 });
 
+test('a bare "all" is a no-op even against a query nothing can narrow (#38)', () => {
+  // `all` adds no constraint, so the other side stands as written rather than
+  // failing the way a genuine combination with `not` / `only` would.
+  assert.deepEqual(composeImportConditions([{ media: 'all' }, { media: 'not print' }]), { media: 'not print' });
+  assert.deepEqual(composeImportConditions([{ media: 'only screen' }, { media: 'all' }]), { media: 'only screen' });
+  assert.deepEqual(composeImportConditions([{ media: 'ALL' }, { media: 'not print' }]), { media: 'not print' });
+});
+
+test('drops a pair that cannot hold and keeps the rest of the cross product (#38)', () => {
+  // `screen` x `print` matches nowhere, but `print` x `print` does, so the
+  // intersection is `print` rather than a failure.
+  assert.deepEqual(composeImportConditions([{ media: 'print' }, { media: 'print, screen' }]), { media: 'print' });
+  assert.deepEqual(composeImportConditions([{ media: 'print, screen' }, { media: 'screen' }]), { media: 'screen' });
+});
+
+test('combines a multi-query list with a multi-query list (#38)', () => {
+  assert.deepEqual(
+    composeImportConditions([{ media: '(min-width: 10cm), (orientation: landscape)' }, { media: 'print, screen' }]),
+    {
+      media: [
+        'print and (min-width: 10cm)',
+        'print and (orientation: landscape)',
+        'screen and (min-width: 10cm)',
+        'screen and (orientation: landscape)',
+      ].join(', '),
+    },
+  );
+});
+
+test('accepts a negated feature query as a combinable condition (#38)', () => {
+  // `screen and not (hover)` is valid Media Queries 4. The negation is wrapped
+  // in parentheses on the way out, because a bare `not (...)` may not be
+  // followed by a further `and`.
+  assert.deepEqual(composeImportConditions([{ media: 'screen' }, { media: 'screen and not (hover)' }]), {
+    media: 'screen and (not (hover))',
+  });
+  assert.deepEqual(
+    composeImportConditions([{ media: '(min-width: 10cm)' }, { media: 'screen and not (hover)' }]),
+    { media: 'screen and (not (hover)) and (min-width: 10cm)' },
+    'the wrapped negation stays valid with another condition after it',
+  );
+  // A whole query that *starts* with `not` negates a media type, which cannot
+  // be narrowed by `and`, so it is still refused.
+  assert.throws(() => composeImportConditions([{ media: 'print' }, { media: 'not (hover)' }]), /Cannot combine/);
+});
+
+test('rejects a media query list that contributes no query at all (#38)', () => {
+  // Silently widening the condition is the failure this change exists to stop.
+  assert.throws(
+    () => composeImportConditions([{ media: 'print' }, { media: ',' }]),
+    /Cannot combine the media query lists ","? and "print"/,
+  );
+});
+
+test('passes a single supports() condition through unchanged (#38)', () => {
+  assert.deepEqual(composeImportConditions([{}, { supports: 'display: grid' }]), { supports: 'display: grid' });
+});
+
+test('does not split a comma or "and" inside a quoted string (#38)', () => {
+  assert.deepEqual(
+    composeImportConditions([{ media: 'print' }, { media: '(font-family: "a, b")' }]),
+    { media: 'print and (font-family: "a, b")' },
+    'a quoted comma is not a list separator',
+  );
+  assert.deepEqual(composeImportConditions([{ media: 'print' }, { media: '(font-family: "x and y")' }]), {
+    media: 'print and (font-family: "x and y")',
+  });
+  assert.deepEqual(composeImportConditions([{ media: "print" }, { media: '(font-family: \'a, b\')' }]), {
+    media: "print and (font-family: 'a, b')",
+  });
+});
+
 test('does not split an "and" or a comma inside parentheses (#38)', () => {
   assert.deepEqual(
     composeImportConditions([{ media: '(min-width: 10cm)' }, { media: 'screen and (color-index: 1)' }]),
@@ -155,6 +227,7 @@ test('rejects media queries that cannot both hold (#38)', () => {
   assert.throws(() => composeImportConditions([{ media: 'print' }, { media: 'not screen' }]), /Cannot combine/);
   assert.throws(() => composeImportConditions([{ media: 'only screen' }, { media: 'print' }]), /Cannot combine/);
   assert.throws(() => composeImportConditions([{ media: 'print' }, { media: 'screen projection' }]), /Cannot combine/);
+  assert.throws(() => composeImportConditions([{ media: 'print' }, { media: 'screen and hover' }]), /Cannot combine/);
 });
 
 test('composes all three kinds of condition at once (#38)', () => {
