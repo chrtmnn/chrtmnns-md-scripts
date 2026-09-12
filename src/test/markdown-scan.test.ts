@@ -180,9 +180,35 @@ test('an inline comment after other content leaves the heading intact (#32)', ()
   assert.equal(findFirstH2Index(['## Heading <!-- omit in toc -->']), 0);
 });
 
-test('an unclosed inline comment hides the following lines but not its own prefix (#32)', () => {
-  assert.deepEqual(findFirstHeading(['# Heading <!-- start', '# hidden', '-->']), { level: 1, text: 'Heading' });
-  assert.deepEqual(findFirstHeading(['text <!-- start', '# hidden', '-->', '# Real']), { level: 1, text: 'Real' });
+test('an unclosed inline comment affects only its own line (#32)', () => {
+  assert.deepEqual(findFirstHeading(['# Heading <!-- start', 'text', '-->']), { level: 1, text: 'Heading' });
+  // A mid-line `<!--` must not open a block: the next line stays live.
+  assert.deepEqual(findFirstHeading(['text <!-- start', '# Real']), { level: 1, text: 'Real' });
+});
+
+test('prose mentioning the comment delimiter cannot hide a later heading (#32)', () => {
+  // An inline code span and an indented code sample both legitimately contain
+  // `<!--`; neither may suppress the rest of the document.
+  assert.deepEqual(findFirstHeading(['Use `<!--` to start a comment.', '', '# Real Title']), {
+    level: 1,
+    text: 'Real Title',
+  });
+  assert.deepEqual(findFirstHeading(['    <!-- example', '', '# Real Title']), { level: 1, text: 'Real Title' });
+  assert.deepEqual(findFirstHeading(['The marker <!-- opens a comment', '', '# Real Title']), {
+    level: 1,
+    text: 'Real Title',
+  });
+  assert.equal(findFirstH2Index(['Use `<!--` here.', '', '## Real']), 2);
+});
+
+test('a line-start comment block that never closes hides the rest of the document (#32)', () => {
+  assert.equal(findFirstHeading(['<!--', '# hidden', 'still hidden']), null);
+  assert.equal(findFirstH2Index(['<!--', '## hidden']), -1);
+});
+
+test('the abbreviated empty comment closes on its own line (#32)', () => {
+  assert.deepEqual(findFirstHeading(['<!-->', '# Real']), { level: 1, text: 'Real' });
+  assert.deepEqual(findFirstHeading(['# Heading <!-->']), { level: 1, text: 'Heading' });
 });
 
 test('a comment inside a fenced code block does not open a comment block (#32)', () => {
@@ -231,18 +257,20 @@ test('a fence still closes on a bare delimiter after one with an info string (#3
   assert.equal(findFirstH2Index(document), 5);
 });
 
-test('stripInlineComments removes complete spans and reports a leftover opener', () => {
-  assert.deepEqual(stripInlineComments('plain line'), { text: 'plain line', open: false });
-  assert.deepEqual(stripInlineComments('a <!-- x --> b'), { text: 'a  b', open: false });
-  assert.deepEqual(stripInlineComments('a <!-- x --> b <!-- y --> c'), { text: 'a  b  c', open: false });
-  assert.deepEqual(stripInlineComments('a <!-- x'), { text: 'a ', open: true });
-  assert.deepEqual(stripInlineComments('a <!-- x --> b <!-- y'), { text: 'a  b ', open: true });
+test('stripInlineComments removes complete spans and truncates at an unclosed opener', () => {
+  assert.equal(stripInlineComments('plain line'), 'plain line');
+  assert.equal(stripInlineComments('a <!-- x --> b'), 'a  b');
+  assert.equal(stripInlineComments('a <!-- x --> b <!-- y --> c'), 'a  b  c');
+  assert.equal(stripInlineComments('a <!-- x'), 'a ');
+  assert.equal(stripInlineComments('a <!-- x --> b <!-- y'), 'a  b ');
+  assert.equal(stripInlineComments('a <!--> b'), 'a  b', 'the abbreviated empty comment');
 });
 
 test('mapLiveContent blanks out fenced blocks and comment blocks alike', () => {
   assert.deepEqual(mapLiveContent(['# A', '```', 'code', '```', '# B']), ['# A', null, null, null, '# B']);
   assert.deepEqual(mapLiveContent(['<!--', 'hidden', '-->', '# B']), [null, null, null, '# B']);
   assert.deepEqual(mapLiveContent(['# A <!-- note -->']), ['# A ']);
+  assert.deepEqual(mapLiveContent(['a <!-- open', '# B']), ['a ', '# B'], 'a mid-line opener is line-local');
 });
 
 test('findFirstHeading recognises setext headings at both levels', () => {

@@ -115,38 +115,58 @@ const COMMENT_OPEN = '<!--';
 const COMMENT_CLOSE = '-->';
 
 /**
- * Removes every complete `<!-- ... -->` span from a line and reports whether
- * an unclosed `<!--` is left over.
+ * Removes every complete `<!-- ... -->` span from a line, and drops whatever
+ * follows an unclosed `<!--`.
  *
  * This handles comments that sit *after* other content on the line, where
  * CommonMark sees inline HTML rather than an HTML block — so
- * `## Heading <!-- omit in toc -->` keeps its heading. A leftover `<!--` with
- * no `-->` is treated as opening a comment block, which is a heuristic rather
- * than the CommonMark reading (strictly it would be inline text), but it
- * matches what an author writing `text <!--` … `-->` means.
+ * `## Heading <!-- omit in toc -->` keeps its heading.
+ *
+ * A mid-line `<!--` deliberately does **not** open a block for the following
+ * lines, only the rest of its own line. Suppressing the following lines would
+ * match what an author writing `text <!--` … `-->` means, but it also fires on
+ * ordinary prose that merely mentions the delimiter — a `` `<!--` `` inside an
+ * inline code span, or an indented code sample — and would then hide every
+ * heading after it. That is the failure this module exists to prevent, so the
+ * line-oriented reading wins: only a line-start `<!--` opens a block, as in
+ * CommonMark.
  *
  * @param line - Single line of Markdown, without its line terminator.
- * @returns The line with its complete comment spans removed, and whether it
- *   leaves a comment block open for the following lines.
+ * @returns The line's content outside its comment spans.
  */
-export function stripInlineComments(line: string): { text: string; open: boolean } {
+export function stripInlineComments(line: string): string {
   let text = '';
   let rest = line;
 
   for (;;) {
     const open = rest.indexOf(COMMENT_OPEN);
     if (open === -1) {
-      return { text: text + rest, open: false };
+      return text + rest;
     }
 
-    const close = rest.indexOf(COMMENT_CLOSE, open + COMMENT_OPEN.length);
+    const close = indexOfCommentClose(rest, open);
     if (close === -1) {
-      return { text: text + rest.slice(0, open), open: true };
+      return text + rest.slice(0, open);
     }
 
     text += rest.slice(0, open);
     rest = rest.slice(close + COMMENT_CLOSE.length);
   }
+}
+
+/**
+ * Finds the `-->` that closes the comment opened at `open`.
+ *
+ * The search starts just past the `<!`, not past the whole `<!--`, so that the
+ * abbreviated empty comment `<!-->` — whose `-->` overlaps the opener's dashes
+ * — is recognised as closed on its own line.
+ *
+ * @param line - Line to search.
+ * @param open - Index of the `<!--` that opened the comment.
+ * @returns The index of the closing `-->`, or `-1` when the line has none.
+ */
+function indexOfCommentClose(line: string, open: number): number {
+  return line.indexOf(COMMENT_CLOSE, open + 2);
 }
 
 /**
@@ -161,12 +181,14 @@ export function stripInlineComments(line: string): { text: string; open: boolean
  * - **HTML comment blocks**: a line whose first non-space characters are
  *   `<!--` is a CommonMark type-2 HTML block and is opaque up to *and
  *   including* the line carrying `-->`, so `<!-- x --> # Real` yields no
- *   heading. A `<!--` appearing after other content on the line is treated as
- *   an inline span instead — see {@link stripInlineComments}.
+ *   heading. A `<!--` appearing after other content affects only its own line
+ *   — see {@link stripInlineComments}.
  *
  * This is still a documented heuristic, not a CommonMark parser: indented code
  * blocks are handled by the heading matchers themselves, and other HTML block
  * types, link reference definitions and inline escapes are not modelled.
+ * Because a mid-line `<!--` never opens a block, prose that merely mentions
+ * the delimiter — in an inline code span, say — cannot hide a later heading.
  *
  * @param lines - Document lines, without line terminators.
  * @returns An array parallel to `lines` holding each line's live content, or
@@ -209,14 +231,12 @@ export function mapLiveContent(lines: string[]): (string | null)[] {
     }
 
     if (/^ {0,3}<!--/.test(line)) {
-      inComment = !line.includes(COMMENT_CLOSE, line.indexOf(COMMENT_OPEN) + COMMENT_OPEN.length);
+      inComment = indexOfCommentClose(line, line.indexOf(COMMENT_OPEN)) === -1;
       live.push(null);
       continue;
     }
 
-    const stripped = stripInlineComments(line);
-    inComment = stripped.open;
-    live.push(stripped.text);
+    live.push(stripInlineComments(line));
   }
 
   return live;
