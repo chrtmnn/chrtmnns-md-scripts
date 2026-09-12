@@ -9,11 +9,23 @@ export type CssVarOverride = {
 };
 
 /**
+ * Where the stylesheet of a run came from:
+ *
+ * - `option`: an explicit `-s/--stylesheet` value;
+ * - `user-default`: `<config dir>/default.css`, picked because no `-s` was given;
+ * - `bundled`: the bundled `src/css/default.css`, either as the last fallback
+ *   or because `-s default` asked for it.
+ */
+export type StylesheetOrigin = 'option' | 'user-default' | 'bundled';
+
+/**
  * Resolved CLI options shared by every conversion step.
  */
 export type ConverterOptions = {
   /** Stylesheet passed to md-to-pdf, either user-provided or the default stylesheet. */
   stylesheet?: string;
+  /** How {@link ConverterOptions.stylesheet} was chosen, reported by `--verbose`. */
+  stylesheetOrigin: StylesheetOrigin;
   /** CSS custom property overrides appended to the effective stylesheet. */
   cssVars: CssVarOverride[];
   /** Target directory for generated PDFs. Defaults to each source file's directory. */

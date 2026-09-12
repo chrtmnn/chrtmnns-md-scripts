@@ -130,7 +130,7 @@ md2pdf --png README.md
 |---------------------------|-----------------------------------------------------------------------------------------------------------|
 | `-R, --recursive`         | Also expand subfolders of folder arguments. Skips `node_modules`, `.git`, and folders starting with a dot. |
 | `--merge <name>`          | Combine all resolved Markdown files into one PDF with this base name. The `.pdf` suffix is optional.      |
-| `-s, --stylesheet <file>` | Stylesheet for the generated PDF: a path, or the name of a stylesheet in `~/.md2pdf` (see [Personal Stylesheets](#personal-stylesheets)). Defaults to `src/css/default.css`. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
+| `-s, --stylesheet <file>` | Stylesheet for the generated PDF: a path, or the name of a stylesheet in `~/.md2pdf` (see [Personal Stylesheets](#personal-stylesheets)). `-s default` always means the bundled `src/css/default.css`. Without the option, `~/.md2pdf/default.css` is used when it exists, otherwise the bundled stylesheet. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
 | `--css-var <name=value>`  | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. |
 | `-o, --output-dir <dir>`  | Output directory for PDFs. Defaults to each Markdown file's directory, or to the common parent folder of all inputs with `--merge`. |
 | `-r, --temp-root <dir>`   | Root directory for temporary work dirs. Defaults to the system temp directory.                            |
@@ -210,6 +210,22 @@ md2pdf -s letter invite.md       # uses ~/.md2pdf/letter.css, ".css" is optional
 2. `~/.md2pdf/<name>`, then `~/.md2pdf/<name>.css`. This only applies to a plain name. `-s ./custom.css` or `-s themes/dark.css` never looks in the config folder, and subfolders of the config folder are not searched.
 
 If nothing matches, the error lists every location that was tried. Set the `MD2PDF_CONFIG_DIR` environment variable to use a different folder.
+
+A `default.css` in the config folder is used whenever you pass no `-s` at all:
+
+```powershell
+md2pdf report.md              # uses ~/.md2pdf/default.css when it exists
+md2pdf -s default report.md   # uses the bundled src/css/default.css for this run
+md2pdf -s default.css report.md   # uses ~/.md2pdf/default.css explicitly
+```
+
+It **replaces** the bundled stylesheet instead of adding to it, exactly like any other `-s` value, so everything the bundled file provides — the `@page` setup, the `.page-break` and `.document-break` helpers, and all the custom properties `--css-var` targets — has to come from your file. The simplest start is a copy:
+
+```powershell
+Copy-Item <repo>\src\css\default.css $HOME\.md2pdf\default.css
+```
+
+`default` is reserved for the bundled stylesheet, so `-s default` never picks up `~/.md2pdf/default.css`; use `-s default.css` (or its path) for that. `--verbose` prints which stylesheet a run uses and why.
 
 A stylesheet in the config folder may `@import` other files and use `url()` for fonts and images. Relative references resolve against the folder of the file they appear in, including subfolders such as `~/.md2pdf/theme/`. Put remote imports such as web fonts at the very top of the file you pass with `-s`: after a local `@import` they are currently ignored.
 

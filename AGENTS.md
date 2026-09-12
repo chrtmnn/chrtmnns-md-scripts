@@ -187,7 +187,20 @@ A side effect worth knowing: the `--debug` HTML is now self-contained, so it ren
 
 The config directory is `MD2PDF_CONFIG_DIR` when set and non-empty, otherwise `~/.md2pdf` (`os.homedir()`). Stylesheets live directly in it; subdirectories are never searched for the `-s` name, although a stylesheet found there may still `@import` files from its subdirectories (see *CSS variable system*). A directory that carries the stylesheet's name is skipped. The match is passed on as an absolute path, since a relative value now refers to the caller's directory rather than the process working directory.
 
-When nothing matches, a path value keeps the single-line `Stylesheet not found: <path>` error, and a bare name lists every location that was tried. Without `-s`, the bundled `src/css/default.css` is used; a per-user default stylesheet is tracked in #40.
+When nothing matches, a path value keeps the single-line `Stylesheet not found: <path>` error, and a bare name lists every location that was tried.
+
+`chooseStylesheet` wraps that lookup with the choice for the whole run (#40) and reports the origin alongside the path:
+
+| `-s` value | result | origin |
+|---|---|---|
+| `default` | the bundled `src/css/default.css`, without any lookup | `bundled` |
+| anything else | `findStylesheet` as above | `option` |
+| none, `<config dir>/default.css` exists | that file, **replacing** the bundled stylesheet | `user-default` |
+| none | the bundled stylesheet, or nothing when it is missing | `bundled` |
+
+`default` is reserved absolutely: neither the invocation directory nor the config directory is consulted for it, so a single run can fall back to the bundled stylesheet without naming a path that differs per machine. The personal file stays reachable as `-s default.css` (a bare name, so the config directory applies) or by path. An explicit `-s default` in a checkout without `src/css/default.css` fails like any other unmatched `-s`; without `-s` the run continues with no stylesheet at all, as before.
+
+The personal default replaces rather than extends, exactly like any other `-s` value — a user file therefore has to carry the `@page` setup, `.page-break`, `.document-break` and every custom property `--css-var` targets, which the README says under *Personal Stylesheets*. `ConverterOptions.stylesheetOrigin` carries the origin so `md2pdf.ts` can print `describeStylesheet` under `--verbose`, since an unflagged switch of the default is otherwise invisible.
 
 Tests must never touch the real home directory: the lookup rules take both directories and an `isFile` callback as parameters, and the `resolveOptions` tests point both environment variables at temp directories.
 

@@ -77,13 +77,18 @@ test('collect appends without mutating the previous values', () => {
   assert.deepEqual(previous, ['a=1']);
 });
 
-test('falls back to the bundled default stylesheet', () => {
+test('falls back to the bundled default stylesheet', (t) => {
+  // An empty config directory, so a developer's own ~/.md2pdf/default.css
+  // cannot decide the outcome of this test (#40).
+  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t) });
+
   const options = resolveOptions(parse(['doc.md']));
 
   assert.equal(
     comparablePath(options.stylesheet!),
     comparablePath(path.resolve(__dirname, '..', 'css', 'default.css')),
   );
+  assert.equal(options.stylesheetOrigin, 'bundled');
 });
 
 test('keeps an existing custom stylesheet as given', (t) => {
@@ -91,6 +96,7 @@ test('keeps an existing custom stylesheet as given', (t) => {
   const stylesheet = writeFile(dir, 'custom.css', 'body {}\n');
 
   assert.equal(resolveOptions(parse(['-s', stylesheet, 'doc.md'])).stylesheet, stylesheet);
+  assert.equal(resolveOptions(parse(['-s', stylesheet, 'doc.md'])).stylesheetOrigin, 'option');
 });
 
 test('rejects a stylesheet that does not exist', (t) => {
@@ -101,7 +107,56 @@ test('rejects a stylesheet that does not exist', (t) => {
   });
 });
 
-test('defaults every flag to false and the optional values to undefined', () => {
+test('uses default.css from the config directory when no -s is given (#40)', (t) => {
+  const config = tempDir(t);
+  const personal = writeFile(config, 'default.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+
+  const options = resolveOptions(parse(['doc.md']));
+
+  assert.equal(options.stylesheet, personal);
+  assert.equal(options.stylesheetOrigin, 'user-default');
+});
+
+test('-s default forces the bundled stylesheet over a personal one (#40)', (t) => {
+  const config = tempDir(t);
+  writeFile(config, 'default.css', 'body {}\n');
+  writeFile(config, 'default', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+
+  const options = resolveOptions(parse(['-s', 'default', 'doc.md']));
+
+  assert.equal(
+    comparablePath(options.stylesheet!),
+    comparablePath(path.resolve(__dirname, '..', 'css', 'default.css')),
+  );
+  assert.equal(options.stylesheetOrigin, 'bundled');
+});
+
+test('-s default.css still selects the personal default (#40)', (t) => {
+  const config = tempDir(t);
+  const personal = writeFile(config, 'default.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+
+  const options = resolveOptions(parse(['-s', 'default.css', 'doc.md']));
+
+  assert.equal(options.stylesheet, personal);
+  assert.equal(options.stylesheetOrigin, 'option');
+});
+
+test('a personal default.css never overrides an explicit -s (#40)', (t) => {
+  const config = tempDir(t);
+  writeFile(config, 'default.css', 'body {}\n');
+  const custom = writeFile(config, 'custom.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+
+  assert.equal(resolveOptions(parse(['-s', 'custom', 'doc.md'])).stylesheet, custom);
+  assert.equal(resolveOptions(parse(['-s', 'custom', 'doc.md'])).stylesheetOrigin, 'option');
+});
+
+test('defaults every flag to false and the optional values to undefined', (t) => {
+  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t) });
+
   const options = resolveOptions(parse(['doc.md']));
 
   assert.deepEqual(
