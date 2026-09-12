@@ -71,8 +71,9 @@ its own module rather than being `export`ed out of a file that also does I/O.
 validation, out of `resolve-options.ts`), `css-import-conditions.ts`
 (`@import` layer/supports/media parsing, out of `resolve-stylesheet.ts`),
 `npx-invocation.ts` (the shell-free npx lookup and error formatting, out of
-`run-npx.ts`) and `stylesheet-lookup.ts` (the `-s` lookup order, out of
-`resolve-options.ts`) all follow that split: the step file
+`run-npx.ts`), `css-import-hoisting.ts` (remote `@import` placement and
+restating, out of `resolve-stylesheet.ts`) and `stylesheet-lookup.ts` (the `-s`
+lookup order, out of `resolve-options.ts`) all follow that split: the step file
 keeps the filesystem work, the extracted module keeps the rules.
 
 ## Architecture
@@ -144,7 +145,7 @@ Both heading lookups — `findFirstHeading` (→ `extractTitle` → `--document-
 Two containers are tracked, both line-oriented:
 
 - **Fenced code blocks** (` ``` `/`~~~`): closed only by a run of the same character that is at least as long **and** carries no info string, per CommonMark. ` ```js ` can open a block but never close one, so `['```', '## inside', '```js', '## after']` has no heading outside the block at all.
-- **HTML comment blocks**: a line whose first non-space characters are `<!--` is a CommonMark type-2 HTML block and is opaque up to **and including** the line carrying `-->`, so `<!-- x --> # Real` yields no heading. A `<!--` that appears *after* other content on the line is treated as an inline span instead and only that span is removed, which keeps `## Heading <!-- omit in toc -->` a heading. An unclosed mid-line `<!--` still opens a block — strictly CommonMark would read it as inline text, but suppressing the following lines is what an author writing `text <!--` … `-->` means.
+- **HTML comment blocks**: a line whose first non-space characters are `<!--` is a CommonMark type-2 HTML block and is opaque up to **and including** the line carrying `-->`, so `<!-- x --> # Real` yields no heading. The abbreviated empty comment `<!-->` counts as closed on its own line. A `<!--` that appears *after* other content is an inline span and affects only its own line: complete spans are removed, which keeps `## Heading <!-- omit in toc -->` a heading, and anything after an unclosed `<!--` is dropped up to the end of that line. A mid-line `<!--` deliberately does **not** open a block for the following lines — doing so would fire on prose that merely mentions the delimiter (a `` `<!--` `` in an inline code span, an indented code sample) and hide every heading after it, which is the failure this module exists to prevent.
 
 `matchAtxHeading` applies the CommonMark rules for the heading text itself: `#hashtag` is not a heading, four spaces of indentation make an indented code block, and the optional closing hash sequence is stripped rather than returned — `## Heading ##` is the heading `Heading`. The closing run only counts when preceded by a space or tab or when it is the whole remainder, so `## Heading#` keeps its `#` and `## #` is an empty heading.
 
@@ -209,14 +210,20 @@ An inlined `@import` keeps its conditions as wrapping blocks, nested in grammar 
 | a file imported with `print` | `@import url(REMOTE) print;` |
 | `layer(inner) screen` inside a file imported with `layer(outer)` | `@import url(REMOTE) layer(outer.inner) screen;` |
 
-The composition rules are in `css-import-conditions.ts` next to the tail parsing: layer names nest with `.`, `supports()` conditions combine as `(A) and (B)`, and media query lists combine as a cross product (`print, screen` inside `(min-width: 10cm)` → `print and (min-width: 10cm), screen and (min-width: 10cm)`, with the media type leading each rendered query because CSS requires that). Where no faithful composition exists the run aborts with the importing file named rather than emit an `@import` that would be dropped again: an anonymous `layer` has no name to nest with another layer, two different media *types* cannot both hold, and a `not` / `only` query cannot be narrowed by `and`. A single set of conditions is passed through verbatim, so a lone anonymous `layer` or `not print` survives untouched.
+The composition rules are in `css-import-conditions.ts` next to the tail parsing: layer names nest with `.`, `supports()` conditions combine as `(A) and (B)`, and media query lists combine as a cross product (`print, screen` inside `(min-width: 10cm)` → `print and (min-width: 10cm), screen and (min-width: 10cm)`, with the media type leading each rendered query because CSS requires that). A pair that cannot hold at once is dropped from the cross product rather than failing it, so `print` inside `print, screen` composes to `print`; `all` adds no constraint and leaves the other side as written. A negated feature query is parenthesised on the way out (`screen and (not (hover))`), because a bare `not (…)` may not be followed by a further `and`.
+
+Where no faithful composition exists the run aborts with the importing file named rather than emit an `@import` that would be dropped again: an anonymous `layer` has no name to nest with another layer, two different media *types* cannot both hold, a query whose own `not` / `only` negates a media type cannot be narrowed by `and`, and a media query list that contributes nothing would silently *widen* the condition. A single set of conditions is passed through verbatim, so a lone anonymous `layer` or `not print` survives untouched.
 
 Two consequences worth knowing:
 
 - **Cascade order changes.** A hoisted remote sheet moves ahead of local rules that preceded it in source order, so where both define the same selector the local rule now wins. For the main use case — a `fonts.css` full of `@font-face` declarations — that is irrelevant, but exact source order cannot be preserved: inlined content has to follow the `@import`s, not precede them.
 - **Insertion point.** The imports go after a leading `@charset` and after any leading `@layer` *statements* (`@layer a, b;`), because those fix cascade-layer order by first appearance and must keep their position. A `@layer x { }` *block* is an ordinary rule, so the hoisted imports go above it.
 
-The statement is re-emitted byte-for-byte when the chain adds no conditions, so a stylesheet whose only remote `@import` already sat at the top still takes the fast path and is passed through unchanged.
+The statement is re-emitted byte-for-byte when the chain adds no conditions, so a stylesheet whose only remote `@import` already sat at the top still takes the fast path and is passed through unchanged — as long as the statement is followed by a newline, which is what the marker consumes. A file ending `@import url(R);` with no trailing newline gains one and is therefore written out.
+
+Two shapes worth expecting in the output: a conditioned local import whose only content *was* the remote import leaves its wrapper behind empty (`@media print { }`), and a diamond that reaches the same remote import twice contributes it once. Both are harmless. The placement and restating rules are a pure string-to-string transformation in `src/steps/css-import-hoisting.ts`; `resolve-stylesheet.ts` keeps the filesystem work.
+
+Two pre-existing gaps that the hoisting does **not** close, because the `@import` never matches in the first place: a statement whose conditions are interrupted by a block comment (`@import url(…) /* c */;`), and one missing its `;` — the latter is deliberately left unmatched, since a tail that ran on to the next `;` anywhere in the file would otherwise let hoisting relocate whole rules.
 
 | Variable | Default | Effect |
 |---|---|---|
