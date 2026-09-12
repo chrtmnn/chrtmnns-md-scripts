@@ -1,9 +1,11 @@
 /**
  * Parsing of the conditions that may follow the target of a CSS `@import` —
  * `layer` / `layer(<name>)`, `supports(<condition>)` and a media query list —
- * and the block wrapper that keeps their meaning when the imported file is
- * inlined. Kept separate from `resolve-stylesheet.ts`, which does the file
- * work, so the rules can be exercised directly.
+ * the block wrapper that keeps their meaning when the imported file is
+ * inlined, and the composition that keeps them when a *remote* `@import` has
+ * to be hoisted out of that chain instead (#38). Kept separate from
+ * `resolve-stylesheet.ts`, which does the file work, so the rules can be
+ * exercised directly.
  */
 
 /** The conditions of one `@import`, split into the parts the grammar allows. */
@@ -85,6 +87,264 @@ export function wrapInImportConditions(css: string, conditions: ImportConditions
   }
 
   return wrapped;
+}
+
+/**
+ * Composes the conditions of a whole `@import` chain into the single set a
+ * hoisted `@import` must carry.
+ *
+ * A remote `@import` only applies where it precedes every other rule and sits
+ * outside any block, so inlining cannot leave it wrapped in the
+ * `@layer` / `@supports` / `@media` blocks that
+ * {@link wrapInImportConditions} produces — it has to be lifted to the top of
+ * the stylesheet with the chain's conditions folded into its own tail (#38).
+ *
+ * - Layer names nest, so they join with `.`: `layer(outer)` around
+ *   `layer(inner)` becomes `layer(outer.inner)`.
+ * - `supports()` conditions combine with `and`, each parenthesised.
+ * - Media query lists combine as a cross product, the inner list's queries
+ *   first: `print, screen` inside `(min-width: 10cm)` becomes
+ *   `print and (min-width: 10cm), screen and (min-width: 10cm)`.
+ *
+ * Where a faithful composition is impossible this throws rather than emit an
+ * `@import` the browser would silently drop again: an anonymous layer has no
+ * name to nest (so it cannot be combined with another layer), two different
+ * media *types* cannot both hold, and a `not` / `only` query cannot be
+ * narrowed by `and`.
+ *
+ * @param chain - Conditions of each `@import` from the outermost inwards, the
+ *   remote import's own conditions last.
+ * @returns The composed conditions for the hoisted `@import`.
+ * @throws When the conditions cannot be composed into a single equivalent tail.
+ */
+export function composeImportConditions(chain: ImportConditions[]): ImportConditions {
+  const composed: ImportConditions = {};
+
+  const layers = chain
+    .map((conditions) => conditions.layer)
+    .filter((layer): layer is string => layer !== undefined);
+  if (layers.length === 1) {
+    composed.layer = layers[0];
+  } else if (layers.length > 1) {
+    const anonymous = layers.find((layer) => layer === '');
+    if (anonymous !== undefined) {
+      throw new Error(
+        `Cannot hoist a remote @import out of an anonymous cascade layer nested with layer(${layers.filter((layer) => layer !== '').join('.')})`,
+      );
+    }
+    composed.layer = layers.join('.');
+  }
+
+  const supports = chain
+    .map((conditions) => conditions.supports)
+    .filter((value): value is string => value !== undefined);
+  if (supports.length === 1) {
+    composed.supports = supports[0];
+  } else if (supports.length > 1) {
+    composed.supports = supports.map((value) => `(${value})`).join(' and ');
+  }
+
+  const medias = chain
+    .map((conditions) => conditions.media)
+    .filter((value): value is string => value !== undefined);
+  if (medias.length > 0) {
+    composed.media = medias.reduceRight((inner, outer) => combineMediaLists(inner, outer));
+  }
+
+  return composed;
+}
+
+/**
+ * Renders conditions back into the tail text of an `@import`, in grammar
+ * order, as the inverse of {@link parseImportConditions}.
+ *
+ * @param conditions - Conditions to render.
+ * @returns The tail text without a leading space or a trailing `;`, empty when
+ *   there are no conditions.
+ */
+export function formatImportConditions(conditions: ImportConditions): string {
+  const parts: string[] = [];
+
+  if (conditions.layer !== undefined) {
+    parts.push(conditions.layer ? `layer(${conditions.layer})` : 'layer');
+  }
+  if (conditions.supports !== undefined) {
+    parts.push(`supports(${conditions.supports})`);
+  }
+  if (conditions.media) {
+    parts.push(conditions.media);
+  }
+
+  return parts.join(' ');
+}
+
+/**
+ * A media query reduced to the parts that can be recombined: at most one media
+ * type, plus the parenthesised feature conditions `and`-ed onto it.
+ */
+type MediaQuery = { type?: string; conditions: string[] };
+
+/**
+ * Combines two media query lists into the list that matches where both hold,
+ * as a cross product with the inner list's queries leading each pair.
+ *
+ * @param inner - Media query list of the inner `@import`.
+ * @param outer - Media query list of the enclosing `@import`.
+ * @returns The combined media query list.
+ * @throws When any pair of queries cannot be combined into one.
+ */
+function combineMediaLists(inner: string, outer: string): string {
+  const combined: string[] = [];
+
+  for (const innerQuery of splitMediaQueryList(inner)) {
+    for (const outerQuery of splitMediaQueryList(outer)) {
+      const pair = combineMediaQueries(innerQuery, outerQuery);
+      if (pair === null) {
+        throw new Error(
+          `Cannot combine the media queries "${innerQuery}" and "${outerQuery}" of a hoisted remote @import`,
+        );
+      }
+      combined.push(pair);
+    }
+  }
+
+  return combined.join(', ');
+}
+
+/**
+ * Combines two single media queries into one that matches where both hold.
+ *
+ * @param inner - Media query of the inner `@import`.
+ * @param outer - Media query of the enclosing `@import`.
+ * @returns The combined query, or `null` when the two cannot be combined.
+ */
+function combineMediaQueries(inner: string, outer: string): string | null {
+  const first = parseMediaQuery(inner);
+  const second = parseMediaQuery(outer);
+  if (!first || !second) {
+    return null;
+  }
+
+  // `all` matches everywhere, so it never conflicts and never needs to be
+  // carried when the other query names a type.
+  const named = [first.type, second.type].filter(
+    (type): type is string => type !== undefined && type.toLowerCase() !== 'all',
+  );
+  if (named.length === 2 && named[0].toLowerCase() !== named[1].toLowerCase()) {
+    return null;
+  }
+
+  const type = named[0] ?? first.type ?? second.type;
+  const parts = [...(type ? [type] : []), ...first.conditions, ...second.conditions];
+
+  return parts.join(' and ');
+}
+
+/**
+ * Splits a media query into its optional leading media type and its
+ * `and`-joined conditions.
+ *
+ * @param query - A single media query.
+ * @returns The parsed query, or `null` when it is not of a shape that can be
+ *   narrowed by `and` — a `not` / `only` query, or one with a bare identifier
+ *   anywhere but first.
+ */
+function parseMediaQuery(query: string): MediaQuery | null {
+  const trimmed = query.trim();
+  if (!trimmed || /^(?:not|only)(?![\w-])/i.test(trimmed)) {
+    return null;
+  }
+
+  const parts = splitTopLevel(trimmed, (rest) => {
+    const separator = /^\s+and(?![\w-])\s*/i.exec(rest);
+    return separator ? separator[0].length : 0;
+  })
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  const parsed: MediaQuery = { conditions: [] };
+  for (const [index, part] of parts.entries()) {
+    if (index === 0 && /^[a-z][\w-]*$/i.test(part)) {
+      parsed.type = part;
+      continue;
+    }
+    // Anything else has to be a parenthesised feature query. A bare word here
+    // is a second media type or a malformed query, and `and`-ing it would
+    // produce an `@import` the browser drops again.
+    if (!part.startsWith('(')) {
+      return null;
+    }
+    parsed.conditions.push(part);
+  }
+
+  return parsed;
+}
+
+/**
+ * Splits a media query list at its top-level commas.
+ *
+ * @param list - A media query list.
+ * @returns The individual queries, trimmed, without empty entries.
+ */
+function splitMediaQueryList(list: string): string[] {
+  return splitTopLevel(list, (rest) => (rest.startsWith(',') ? 1 : 0))
+    .map((query) => query.trim())
+    .filter((query) => query !== '');
+}
+
+/**
+ * Splits text at separators that appear outside parentheses and quoted
+ * strings, so a comma or `and` inside `(...)` does not split the text.
+ *
+ * @param text - Text to split.
+ * @param matchSeparator - Returns the length of the separator at the start of
+ *   the given remainder, or `0` when there is none.
+ * @returns The parts between the separators, which may include empty strings.
+ */
+function splitTopLevel(text: string, matchSeparator: (rest: string) => number): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let depth = 0;
+  let quote: string | undefined;
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+
+    if (quote) {
+      current += char;
+      if (char === '\\' && index + 1 < text.length) {
+        current += text[++index];
+      } else if (char === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === '(') {
+      depth++;
+    } else if (char === ')') {
+      depth--;
+    } else if (depth === 0) {
+      const length = matchSeparator(text.slice(index));
+      if (length > 0) {
+        parts.push(current);
+        current = '';
+        index += length - 1;
+        continue;
+      }
+    }
+
+    current += char;
+  }
+
+  parts.push(current);
+  return parts;
 }
 
 /**
