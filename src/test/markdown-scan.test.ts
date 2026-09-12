@@ -1,7 +1,8 @@
 /**
  * Behaviour of the shared Markdown scanning primitives extracted in #26.
- * The interesting cases come from #18 (fence-unaware title extraction) and
- * #10 (fence-aware TOC placement).
+ * The interesting cases come from #18 (fence-unaware title extraction),
+ * #10 (fence-aware TOC placement), #32 (headings hidden in HTML comments) and
+ * #33 (the closing hash sequence and info-string fences).
  */
 
 import test from 'node:test';
@@ -15,8 +16,10 @@ import {
   isPotentialSetextText,
   isSetextH1Underline,
   isSetextH2Underline,
+  mapLiveContent,
   matchAtxHeading,
   matchFenceDelimiter,
+  stripInlineComments,
 } from '../steps/markdown-scan';
 
 /**
@@ -38,15 +41,21 @@ test('isBlank treats whitespace-only lines as blank', () => {
 });
 
 test('matchFenceDelimiter accepts both fence characters and reports the run length', () => {
-  assert.deepEqual(matchFenceDelimiter('```'), { char: '`', len: 3 });
-  assert.deepEqual(matchFenceDelimiter('~~~~~'), { char: '~', len: 5 });
-  assert.deepEqual(matchFenceDelimiter('```ts'), { char: '`', len: 3 });
+  assert.deepEqual(matchFenceDelimiter('```'), { char: '`', len: 3, info: '' });
+  assert.deepEqual(matchFenceDelimiter('~~~~~'), { char: '~', len: 5, info: '' });
+  assert.deepEqual(matchFenceDelimiter('```ts'), { char: '`', len: 3, info: 'ts' });
+});
+
+test('matchFenceDelimiter reports the info string so a closer can be told apart (#33)', () => {
+  assert.deepEqual(matchFenceDelimiter('~~~ js  '), { char: '~', len: 3, info: 'js' });
+  assert.deepEqual(matchFenceDelimiter('```   '), { char: '`', len: 3, info: '' }, 'trailing spaces only');
+  assert.deepEqual(matchFenceDelimiter('```{.bash #id}'), { char: '`', len: 3, info: '{.bash #id}' });
 });
 
 test('matchFenceDelimiter rejects short runs and 4-space indentation', () => {
   assert.equal(matchFenceDelimiter('``'), null);
   assert.equal(matchFenceDelimiter('~~'), null);
-  assert.deepEqual(matchFenceDelimiter('   ```'), { char: '`', len: 3 });
+  assert.deepEqual(matchFenceDelimiter('   ```'), { char: '`', len: 3, info: '' });
   assert.equal(matchFenceDelimiter('    ```'), null, 'four spaces is an indented code block');
 });
 
@@ -146,20 +155,94 @@ test('findFirstHeading skips #hashtag lines and indented code (#18)', () => {
   assert.deepEqual(findFirstHeading(lines('    # indented code\n\n# Real Title\n')), { level: 1, text: 'Real Title' });
 });
 
-// ANOMALY (not a regression, pre-existing): the scan is fence-aware but not
-// HTML-comment-aware, so a heading that the author commented out still wins.
-// Same failure mode as #18, different container. Skipped because the
-// production code does not do this yet; do not change the assertion to match
-// the current behaviour.
-test('findFirstHeading should ignore headings inside HTML comment blocks', { skip: 'known gap, see PR notes' }, () => {
+test('findFirstHeading ignores headings inside HTML comment blocks (#32)', () => {
   assert.deepEqual(findFirstHeading(['<!--', '# commented out', '-->', '# Real']), { level: 1, text: 'Real' });
 });
 
-// ANOMALY (not a regression, pre-existing): CommonMark allows an optional
-// closing hash sequence (`## Heading ##`), which should not be part of the
-// heading text. It currently ends up in the PDF's document title.
-test('matchAtxHeading should strip an optional closing hash sequence', { skip: 'known gap, see PR notes' }, () => {
+test('findFirstH2Index ignores h2 headings inside HTML comment blocks (#32)', () => {
+  assert.equal(findFirstH2Index(['<!--', '## commented out', '-->', '## Real']), 3);
+});
+
+test('findFirstHeading handles the realistic commented-out draft section (#32)', () => {
+  const document = lines(
+    '<!--\n# Old Draft Title\nSome paragraph we are not shipping yet.\n-->\n\n# Actual Title\n',
+  );
+  assert.deepEqual(findFirstHeading(document), { level: 1, text: 'Actual Title' });
+});
+
+test('an HTML comment block swallows the rest of its closing line (#32)', () => {
+  assert.equal(findFirstHeading(['<!-- note --> # Real']), null, 'a line-start comment is an HTML block');
+  assert.equal(findFirstHeading(['<!--', '# hidden', '--> # also hidden']), null);
+});
+
+test('an inline comment after other content leaves the heading intact (#32)', () => {
+  assert.deepEqual(findFirstHeading(['# Heading <!-- omit in toc -->']), { level: 1, text: 'Heading' });
+  assert.equal(findFirstH2Index(['## Heading <!-- omit in toc -->']), 0);
+});
+
+test('an unclosed inline comment hides the following lines but not its own prefix (#32)', () => {
+  assert.deepEqual(findFirstHeading(['# Heading <!-- start', '# hidden', '-->']), { level: 1, text: 'Heading' });
+  assert.deepEqual(findFirstHeading(['text <!-- start', '# hidden', '-->', '# Real']), { level: 1, text: 'Real' });
+});
+
+test('a comment inside a fenced code block does not open a comment block (#32)', () => {
+  const document = ['```html', '<!--', '```', '# Real'];
+  assert.deepEqual(findFirstHeading(document), { level: 1, text: 'Real' });
+});
+
+test('a fence inside an HTML comment block does not open a fence (#32)', () => {
+  const document = ['<!--', '```', '-->', '# Real'];
+  assert.deepEqual(findFirstHeading(document), { level: 1, text: 'Real' });
+});
+
+test('a setext underline hidden in a comment does not form a heading (#32)', () => {
+  assert.equal(findFirstH2Index(['Underlined', '<!--', '---', '-->']), -1);
+});
+
+test('matchAtxHeading strips an optional closing hash sequence (#33)', () => {
   assert.deepEqual(matchAtxHeading('## Heading ##'), { level: 2, text: 'Heading' });
+  assert.deepEqual(matchAtxHeading('# Title #'), { level: 1, text: 'Title' });
+  assert.deepEqual(matchAtxHeading('##\tTabbed\t##'), { level: 2, text: 'Tabbed' });
+  assert.deepEqual(matchAtxHeading('## Heading ##   '), { level: 2, text: 'Heading' });
+});
+
+test('matchAtxHeading keeps a hash run that does not close the heading (#33)', () => {
+  assert.deepEqual(matchAtxHeading('## Heading#'), { level: 2, text: 'Heading#' }, 'no space before the run');
+  assert.deepEqual(matchAtxHeading('## Heading ## x'), { level: 2, text: 'Heading ## x' }, 'not at the end');
+  assert.deepEqual(matchAtxHeading('## C# and F#'), { level: 2, text: 'C# and F#' });
+});
+
+test('matchAtxHeading treats a hash-only remainder as an empty heading (#33)', () => {
+  assert.deepEqual(matchAtxHeading('## #'), { level: 2, text: '' });
+  assert.deepEqual(matchAtxHeading('## ##'), { level: 2, text: '' });
+});
+
+test('the closing hash sequence reaches the document title through findFirstHeading (#33)', () => {
+  assert.deepEqual(findFirstHeading(lines('# My Title #\n\ntext\n')), { level: 1, text: 'My Title' });
+});
+
+test('a closing fence carrying an info string does not close the block (#33)', () => {
+  assert.equal(findFirstH2Index(['```', '## inside', '```js', '## after']), -1);
+  assert.equal(findFirstHeading(['```', '# inside', '```js', '# after']), null);
+});
+
+test('a fence still closes on a bare delimiter after one with an info string (#33)', () => {
+  const document = ['```', '## inside', '```js', '## still inside', '```', '## real heading'];
+  assert.equal(findFirstH2Index(document), 5);
+});
+
+test('stripInlineComments removes complete spans and reports a leftover opener', () => {
+  assert.deepEqual(stripInlineComments('plain line'), { text: 'plain line', open: false });
+  assert.deepEqual(stripInlineComments('a <!-- x --> b'), { text: 'a  b', open: false });
+  assert.deepEqual(stripInlineComments('a <!-- x --> b <!-- y --> c'), { text: 'a  b  c', open: false });
+  assert.deepEqual(stripInlineComments('a <!-- x'), { text: 'a ', open: true });
+  assert.deepEqual(stripInlineComments('a <!-- x --> b <!-- y'), { text: 'a  b ', open: true });
+});
+
+test('mapLiveContent blanks out fenced blocks and comment blocks alike', () => {
+  assert.deepEqual(mapLiveContent(['# A', '```', 'code', '```', '# B']), ['# A', null, null, null, '# B']);
+  assert.deepEqual(mapLiveContent(['<!--', 'hidden', '-->', '# B']), [null, null, null, '# B']);
+  assert.deepEqual(mapLiveContent(['# A <!-- note -->']), ['# A ']);
 });
 
 test('findFirstHeading recognises setext headings at both levels', () => {

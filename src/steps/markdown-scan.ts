@@ -1,9 +1,13 @@
 /**
- * Shared, fence-aware Markdown scanning primitives used by both
- * `run-doctoc.ts` (to locate the first `##`-equivalent heading for TOC
- * placement) and `extract-title.ts` (to locate the first heading of any
- * level for the document title). Keeping this logic in one place avoids two
- * divergent implementations of fence/indentation/setext handling.
+ * Shared Markdown scanning primitives used by both `run-doctoc.ts` (to locate
+ * the first `##`-equivalent heading for TOC placement) and `extract-title.ts`
+ * (to locate the first heading of any level for the document title). Keeping
+ * this logic in one place avoids two divergent implementations of
+ * fence/comment/indentation/setext handling.
+ *
+ * Both consumers scan through {@link mapLiveContent}, which hides the two
+ * containers that make a `#` line look like a heading without rendering as
+ * one: fenced code blocks (#18) and HTML comment blocks (#32).
  */
 
 /**
@@ -18,19 +22,25 @@ export function isBlank(line: string): boolean {
 
 /**
  * Detects a fenced-code-block delimiter line (``` or ~~~, indented up to 3
- * spaces, 3 or more delimiter characters).
+ * spaces, 3 or more delimiter characters) and reports the info string that
+ * follows the delimiter run.
+ *
+ * The info string matters because CommonMark allows it only on an *opening*
+ * fence: ```` ```js ```` can open a block but never close one (#33). Callers
+ * tracking fence state must therefore require an empty `info` before treating
+ * a delimiter as the closer.
  *
  * @param line - Single line of Markdown, without its line terminator.
- * @returns The delimiter character and run length, or `null` when the line
- *   is not a fence delimiter.
+ * @returns The delimiter character, run length and trimmed info string, or
+ *   `null` when the line is not a fence delimiter.
  */
-export function matchFenceDelimiter(line: string): { char: string; len: number } | null {
-  const match = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+export function matchFenceDelimiter(line: string): { char: string; len: number; info: string } | null {
+  const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
   if (!match) {
     return null;
   }
   const delimiter = match[1];
-  return { char: delimiter[0], len: delimiter.length };
+  return { char: delimiter[0], len: delimiter.length, info: match[2].trim() };
 }
 
 /**
@@ -98,37 +108,137 @@ export function isSetextH2Underline(line: string): boolean {
   return /^ {0,3}-+[ \t]*$/.test(line);
 }
 
+/** Start of an HTML comment. */
+const COMMENT_OPEN = '<!--';
+
+/** End of an HTML comment. */
+const COMMENT_CLOSE = '-->';
+
 /**
- * Finds the first second-order heading in a fence-aware scan of the
- * document, recognising both ATX (`## ...`) and setext (text line followed
- * by a `---` underline) headings. Lines inside fenced code blocks (```/~~~,
- * closed only by a matching or longer run of the same character) are
- * ignored.
+ * Removes every complete `<!-- ... -->` span from a line and reports whether
+ * an unclosed `<!--` is left over.
+ *
+ * This handles comments that sit *after* other content on the line, where
+ * CommonMark sees inline HTML rather than an HTML block — so
+ * `## Heading <!-- omit in toc -->` keeps its heading. A leftover `<!--` with
+ * no `-->` is treated as opening a comment block, which is a heuristic rather
+ * than the CommonMark reading (strictly it would be inline text), but it
+ * matches what an author writing `text <!--` … `-->` means.
+ *
+ * @param line - Single line of Markdown, without its line terminator.
+ * @returns The line with its complete comment spans removed, and whether it
+ *   leaves a comment block open for the following lines.
+ */
+export function stripInlineComments(line: string): { text: string; open: boolean } {
+  let text = '';
+  let rest = line;
+
+  for (;;) {
+    const open = rest.indexOf(COMMENT_OPEN);
+    if (open === -1) {
+      return { text: text + rest, open: false };
+    }
+
+    const close = rest.indexOf(COMMENT_CLOSE, open + COMMENT_OPEN.length);
+    if (close === -1) {
+      return { text: text + rest.slice(0, open), open: true };
+    }
+
+    text += rest.slice(0, open);
+    rest = rest.slice(close + COMMENT_CLOSE.length);
+  }
+}
+
+/**
+ * Reduces a document to the content that actually renders, so that a `#` line
+ * hidden inside a container is never mistaken for a heading.
+ *
+ * Two containers are tracked, both line-oriented:
+ *
+ * - **Fenced code blocks** (```` ``` ````/`~~~`): closed only by a run of the
+ *   same character that is at least as long *and* carries no info string, per
+ *   CommonMark (#33). Delimiter lines themselves are not content.
+ * - **HTML comment blocks**: a line whose first non-space characters are
+ *   `<!--` is a CommonMark type-2 HTML block and is opaque up to *and
+ *   including* the line carrying `-->`, so `<!-- x --> # Real` yields no
+ *   heading. A `<!--` appearing after other content on the line is treated as
+ *   an inline span instead — see {@link stripInlineComments}.
+ *
+ * This is still a documented heuristic, not a CommonMark parser: indented code
+ * blocks are handled by the heading matchers themselves, and other HTML block
+ * types, link reference definitions and inline escapes are not modelled.
+ *
+ * @param lines - Document lines, without line terminators.
+ * @returns An array parallel to `lines` holding each line's live content, or
+ *   `null` where the line carries none (a fence delimiter, a line inside a
+ *   fenced block, or a line belonging to an HTML comment block).
+ */
+export function mapLiveContent(lines: string[]): (string | null)[] {
+  const live: (string | null)[] = [];
+  let fenceChar: string | null = null;
+  let fenceLen = 0;
+  let inComment = false;
+
+  for (const line of lines) {
+    if (inComment) {
+      // The line that closes an HTML block still belongs to it, so it carries
+      // no live content either way.
+      if (line.includes(COMMENT_CLOSE)) {
+        inComment = false;
+      }
+      live.push(null);
+      continue;
+    }
+
+    const fence = matchFenceDelimiter(line);
+
+    if (fenceChar !== null) {
+      if (fence && fence.char === fenceChar && fence.len >= fenceLen && fence.info === '') {
+        fenceChar = null;
+        fenceLen = 0;
+      }
+      live.push(null);
+      continue;
+    }
+
+    if (fence) {
+      fenceChar = fence.char;
+      fenceLen = fence.len;
+      live.push(null);
+      continue;
+    }
+
+    if (/^ {0,3}<!--/.test(line)) {
+      inComment = !line.includes(COMMENT_CLOSE, line.indexOf(COMMENT_OPEN) + COMMENT_OPEN.length);
+      live.push(null);
+      continue;
+    }
+
+    const stripped = stripInlineComments(line);
+    inComment = stripped.open;
+    live.push(stripped.text);
+  }
+
+  return live;
+}
+
+/**
+ * Finds the first second-order heading in the document's live content,
+ * recognising both ATX (`## ...`) and setext (text line followed by a `---`
+ * underline) headings. Lines inside fenced code blocks or HTML comment blocks
+ * are ignored — see {@link mapLiveContent}. A setext underline must itself be
+ * live content, so a heading cannot be formed across the edge of a container.
  *
  * @param lines - Document lines, without line terminators.
  * @returns The index of the first `##`-equivalent heading line, or `-1`
  *   when none exists.
  */
 export function findFirstH2Index(lines: string[]): number {
-  let fenceChar: string | null = null;
-  let fenceLen = 0;
+  const live = mapLiveContent(lines);
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const fence = matchFenceDelimiter(line);
-
-    if (fence) {
-      if (fenceChar === null) {
-        fenceChar = fence.char;
-        fenceLen = fence.len;
-      } else if (fence.char === fenceChar && fence.len >= fenceLen) {
-        fenceChar = null;
-        fenceLen = 0;
-      }
-      continue;
-    }
-
-    if (fenceChar !== null) {
+  for (let i = 0; i < live.length; i++) {
+    const line = live[i];
+    if (line === null) {
       continue;
     }
 
@@ -136,7 +246,8 @@ export function findFirstH2Index(lines: string[]): number {
       return i;
     }
 
-    if (i + 1 < lines.length && isPotentialSetextText(line) && isSetextH2Underline(lines[i + 1])) {
+    const next = i + 1 < live.length ? live[i + 1] : null;
+    if (next !== null && isPotentialSetextText(line) && isSetextH2Underline(next)) {
       return i;
     }
   }
@@ -187,6 +298,14 @@ export interface HeadingMatch {
  * (no space after the `#`) and lines indented 4 or more spaces (which
  * CommonMark treats as an indented code block, not a heading).
  *
+ * The optional closing hash sequence CommonMark allows is stripped from the
+ * text rather than returned as part of it (#33), so `## Heading ##` is the
+ * heading `Heading`. A trailing `#` run only closes the heading when it is
+ * preceded by a space or tab, or is the whole remainder — hence
+ * `## Heading#` keeps its `#`, while `## #` is an empty heading.
+ * Backslash-escaped hashes (`## foo \#\##`, which CommonMark renders as
+ * `foo ###`) are out of scope: this module does not model inline escapes.
+ *
  * @param line - Single line of Markdown, without its line terminator.
  * @returns The heading level and text, or `null` when the line is not an
  *   ATX heading.
@@ -196,16 +315,19 @@ export function matchAtxHeading(line: string): HeadingMatch | null {
   if (!match) {
     return null;
   }
-  return { level: match[1].length, text: (match[2] ?? '').trim() };
+
+  const content = (match[2] ?? '').trim();
+  const text = /^#+$/.test(content) ? '' : content.replace(/[ \t]+#+$/, '');
+
+  return { level: match[1].length, text };
 }
 
 /**
- * Finds the first heading in a fence-aware scan of the document, of any
- * level, recognising both ATX (`#` through `######`) and setext (text line
- * followed by a `===` or `---` underline) headings. Lines inside fenced
- * code blocks (```/~~~, closed only by a matching or longer run of the same
- * character) are ignored, as are non-heading `#word` lines and lines
- * indented 4 or more spaces.
+ * Finds the first heading in the document's live content, of any level,
+ * recognising both ATX (`#` through `######`) and setext (text line followed
+ * by a `===` or `---` underline) headings. Lines inside fenced code blocks or
+ * HTML comment blocks are ignored — see {@link mapLiveContent} — as are
+ * non-heading `#word` lines and lines indented 4 or more spaces.
  *
  * @param lines - Document lines, without line terminators. Callers should
  *   already have stripped any leading YAML frontmatter block (see
@@ -213,25 +335,11 @@ export function matchAtxHeading(line: string): HeadingMatch | null {
  * @returns The first heading found, or `null` when none exists.
  */
 export function findFirstHeading(lines: string[]): HeadingMatch | null {
-  let fenceChar: string | null = null;
-  let fenceLen = 0;
+  const live = mapLiveContent(lines);
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const fence = matchFenceDelimiter(line);
-
-    if (fence) {
-      if (fenceChar === null) {
-        fenceChar = fence.char;
-        fenceLen = fence.len;
-      } else if (fence.char === fenceChar && fence.len >= fenceLen) {
-        fenceChar = null;
-        fenceLen = 0;
-      }
-      continue;
-    }
-
-    if (fenceChar !== null) {
+  for (let i = 0; i < live.length; i++) {
+    const line = live[i];
+    if (line === null) {
       continue;
     }
 
@@ -240,11 +348,12 @@ export function findFirstHeading(lines: string[]): HeadingMatch | null {
       return atx;
     }
 
-    if (i + 1 < lines.length && isPotentialSetextText(line)) {
-      if (isSetextH1Underline(lines[i + 1])) {
+    const next = i + 1 < live.length ? live[i + 1] : null;
+    if (next !== null && isPotentialSetextText(line)) {
+      if (isSetextH1Underline(next)) {
         return { level: 1, text: line.trim() };
       }
-      if (isSetextH2Underline(lines[i + 1])) {
+      if (isSetextH2Underline(next)) {
         return { level: 2, text: line.trim() };
       }
     }
