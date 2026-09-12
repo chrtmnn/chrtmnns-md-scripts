@@ -135,7 +135,20 @@ Positional arguments may be files or directories. A file positional is kept as-i
 
 `runDoctoc` runs automatically when the source file contains `<!-- START doctoc generated TOC`. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. By default, doctoc runs on a temp copy. The `-u`/`--update-md-toc` flag also updates the original Markdown file when it already has doctoc markers.
 
-When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--force-doctoc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings inside fenced code blocks (` ``` `/`~~~`) are ignored when locating the target position. If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. The relocation rules themselves are a pure string-to-string transformation in `src/steps/toc-placement.ts` (`relocateTocBeforeFirstH2`); `run-doctoc.ts` only applies them to the temp copy and writes the file back when the content actually changed.
+When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--force-doctoc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings that do not render are ignored when locating the target position (see *Markdown scanning*). If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. The relocation rules themselves are a pure string-to-string transformation in `src/steps/toc-placement.ts` (`relocateTocBeforeFirstH2`); `run-doctoc.ts` only applies them to the temp copy and writes the file back when the content actually changed.
+
+### Markdown scanning (`src/steps/markdown-scan.ts`)
+
+Both heading lookups — `findFirstHeading` (→ `extractTitle` → `--document-title`) and `findFirstH2Index` (→ `relocateTocBeforeFirstH2`) — scan through `mapLiveContent`, which reduces the document to the lines that actually render. Keeping the tracking in one place is what stops the two consumers from drifting apart; a container that hides a heading has to hide it from both.
+
+Two containers are tracked, both line-oriented:
+
+- **Fenced code blocks** (` ``` `/`~~~`): closed only by a run of the same character that is at least as long **and** carries no info string, per CommonMark. ` ```js ` can open a block but never close one, so `['```', '## inside', '```js', '## after']` has no heading outside the block at all.
+- **HTML comment blocks**: a line whose first non-space characters are `<!--` is a CommonMark type-2 HTML block and is opaque up to **and including** the line carrying `-->`, so `<!-- x --> # Real` yields no heading. A `<!--` that appears *after* other content on the line is treated as an inline span instead and only that span is removed, which keeps `## Heading <!-- omit in toc -->` a heading. An unclosed mid-line `<!--` still opens a block — strictly CommonMark would read it as inline text, but suppressing the following lines is what an author writing `text <!--` … `-->` means.
+
+`matchAtxHeading` applies the CommonMark rules for the heading text itself: `#hashtag` is not a heading, four spaces of indentation make an indented code block, and the optional closing hash sequence is stripped rather than returned — `## Heading ##` is the heading `Heading`. The closing run only counts when preceded by a space or tab or when it is the whole remainder, so `## Heading#` keeps its `#` and `## #` is an empty heading.
+
+This is a documented heuristic, not a CommonMark parser. Backslash-escaped hashes (`## foo \#\##`, which CommonMark renders as `foo ###`), other HTML block types, link reference definitions and inline escapes are deliberately not modelled.
 
 ### Temp directory strategy
 
@@ -186,6 +199,24 @@ md-to-pdf never references `--stylesheet` by path in the rendered page — it re
 This runs for every configured stylesheet, with or without `--css-var` — the breakage is inherent to how md-to-pdf consumes stylesheets, not to the overrides. The self-contained copy goes into a per-run `md2pdf_css_` temp directory as `style-overrides.css` (the name predates the change; the `:root {}` block is only appended when there are overrides). Fast path: without overrides and without any local reference to resolve, the original path is returned and nothing is written, so the bundled `default.css` is passed through as-is.
 
 An inlined `@import` keeps its conditions as wrapping blocks, nested in grammar order: `@import "x.css" layer(base) supports(display: grid) print;` becomes `@layer base { @supports (display: grid) { @media print { … } } }`. The tail parsing (`layer` / `layer(<name>)`, `supports(…)` with balanced parentheses, then the media query list) is in `src/steps/css-import-conditions.ts`; malformed tails (unbalanced parentheses, empty `layer()` / `supports()`) abort with the importing file named.
+
+**Remote `@import`s are hoisted.** A browser honours an `@import` only where it precedes every other rule and sits outside any block, so a remote one cannot stay where it was written: inlining a local import before it, or wrapping its file in one of those condition blocks, makes the browser drop it *silently* — the PDF then renders without the remote stylesheet, which in practice means a web font falling back. `resolveStylesheet` therefore lifts every remote `@import` to the top of the effective stylesheet, in source order, folding the conditions of the whole import chain into its own tail:
+
+| Found in | Hoisted as |
+|---|---|
+| top level, or an unconditioned import | `@import url(REMOTE);` |
+| a file imported with `layer(fonts)` | `@import url(REMOTE) layer(fonts);` |
+| a file imported with `print` | `@import url(REMOTE) print;` |
+| `layer(inner) screen` inside a file imported with `layer(outer)` | `@import url(REMOTE) layer(outer.inner) screen;` |
+
+The composition rules are in `css-import-conditions.ts` next to the tail parsing: layer names nest with `.`, `supports()` conditions combine as `(A) and (B)`, and media query lists combine as a cross product (`print, screen` inside `(min-width: 10cm)` → `print and (min-width: 10cm), screen and (min-width: 10cm)`, with the media type leading each rendered query because CSS requires that). Where no faithful composition exists the run aborts with the importing file named rather than emit an `@import` that would be dropped again: an anonymous `layer` has no name to nest with another layer, two different media *types* cannot both hold, and a `not` / `only` query cannot be narrowed by `and`. A single set of conditions is passed through verbatim, so a lone anonymous `layer` or `not print` survives untouched.
+
+Two consequences worth knowing:
+
+- **Cascade order changes.** A hoisted remote sheet moves ahead of local rules that preceded it in source order, so where both define the same selector the local rule now wins. For the main use case — a `fonts.css` full of `@font-face` declarations — that is irrelevant, but exact source order cannot be preserved: inlined content has to follow the `@import`s, not precede them.
+- **Insertion point.** The imports go after a leading `@charset` and after any leading `@layer` *statements* (`@layer a, b;`), because those fix cascade-layer order by first appearance and must keep their position. A `@layer x { }` *block* is an ordinary rule, so the hoisted imports go above it.
+
+The statement is re-emitted byte-for-byte when the chain adds no conditions, so a stylesheet whose only remote `@import` already sat at the top still takes the fast path and is passed through unchanged.
 
 | Variable | Default | Effect |
 |---|---|---|
