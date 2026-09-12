@@ -74,6 +74,7 @@ export function writePng(dir: string, relativePath: string): string {
 export function makeOptions(overrides: Partial<ConverterOptions> = {}): ConverterOptions {
   return {
     stylesheet: undefined,
+    stylesheetOrigin: 'bundled',
     cssVars: [],
     outputDir: undefined,
     tempRoot: undefined,

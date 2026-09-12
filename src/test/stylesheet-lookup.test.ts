@@ -1,16 +1,28 @@
 /**
  * Lookup rules for `-s/--stylesheet` (#34): the caller's directory first,
  * then bare names in the per-user config directory, where `.css` is optional.
- * File existence is injected, so these tests touch no filesystem at all.
+ * Plus the choice made without `-s` (#40): a personal `default.css` in the
+ * config directory, otherwise the bundled stylesheet. File existence is
+ * injected, so these tests touch no filesystem at all.
  */
 
 import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { configDirectory, findStylesheet, isBareName, stylesheetCandidates } from '../steps/stylesheet-lookup';
+import {
+  chooseStylesheet,
+  configDirectory,
+  describeStylesheet,
+  findStylesheet,
+  isBareName,
+  stylesheetCandidates,
+} from '../steps/stylesheet-lookup';
 
 const CALLER = path.resolve('/work/notes');
 const CONFIG = path.resolve('/home/me/.md2pdf');
+const BUNDLED = path.resolve('/repo/src/css/default.css');
+const USER_DEFAULT = path.join(CONFIG, 'default.css');
+const LOCATIONS = { invocationDir: CALLER, configDir: CONFIG, bundledStylesheet: BUNDLED };
 
 /**
  * Builds an `isFile` callback that only knows the given files.
@@ -121,4 +133,75 @@ test('keeps the single-path message for a path value', () => {
   assert.throws(() => findStylesheet('./gone.css', CALLER, CONFIG, filesAt()), {
     message: `Stylesheet not found: ${path.join(CALLER, 'gone.css')}`,
   });
+});
+
+test('uses the personal default.css when no -s is given (#40)', () => {
+  assert.deepEqual(chooseStylesheet(undefined, LOCATIONS, filesAt(USER_DEFAULT, BUNDLED)), {
+    path: USER_DEFAULT,
+    origin: 'user-default',
+  });
+});
+
+test('falls back to the bundled stylesheet without a personal default (#40)', () => {
+  assert.deepEqual(chooseStylesheet(undefined, LOCATIONS, filesAt(BUNDLED)), {
+    path: BUNDLED,
+    origin: 'bundled',
+  });
+});
+
+test('ignores a personal default.css in the caller directory (#40)', () => {
+  // Only the config directory holds the personal default; a default.css that
+  // happens to sit next to the document must not change the default.
+  assert.deepEqual(chooseStylesheet(undefined, LOCATIONS, filesAt(path.join(CALLER, 'default.css'), BUNDLED)), {
+    path: BUNDLED,
+    origin: 'bundled',
+  });
+});
+
+test('reports no stylesheet when even the bundled one is missing (#40)', () => {
+  assert.deepEqual(chooseStylesheet(undefined, LOCATIONS, filesAt()), { path: undefined, origin: 'bundled' });
+});
+
+test('-s default always means the bundled stylesheet (#40)', () => {
+  const isFile = filesAt(USER_DEFAULT, BUNDLED, path.join(CALLER, 'default'), path.join(CONFIG, 'default'));
+
+  assert.deepEqual(chooseStylesheet('default', LOCATIONS, isFile), { path: BUNDLED, origin: 'bundled' });
+});
+
+test('-s default.css still refers to the personal default (#40)', () => {
+  assert.deepEqual(chooseStylesheet('default.css', LOCATIONS, filesAt(USER_DEFAULT, BUNDLED)), {
+    path: USER_DEFAULT,
+    origin: 'option',
+  });
+});
+
+test('-s default fails when the bundled stylesheet is missing (#40)', () => {
+  assert.throws(() => chooseStylesheet('default', LOCATIONS, filesAt(USER_DEFAULT)), {
+    message: `Stylesheet not found: ${BUNDLED}`,
+  });
+});
+
+test('an explicit -s keeps the #34 lookup and wins over the personal default (#40)', () => {
+  const custom = path.join(CONFIG, 'custom.css');
+
+  assert.deepEqual(chooseStylesheet('custom', LOCATIONS, filesAt(custom, USER_DEFAULT)), {
+    path: custom,
+    origin: 'option',
+  });
+  assert.throws(() => chooseStylesheet('missing', LOCATIONS, filesAt(USER_DEFAULT)), /Stylesheet not found: missing/);
+});
+
+test('describes which stylesheet was picked and why (#40)', () => {
+  assert.match(describeStylesheet({ path: USER_DEFAULT, origin: 'user-default' }), /personal default/);
+  assert.match(describeStylesheet({ path: BUNDLED, origin: 'bundled' }), /bundled default/);
+  assert.match(describeStylesheet({ path: path.join(CALLER, 'x.css'), origin: 'option' }), /-s/);
+  assert.match(describeStylesheet({ path: undefined, origin: 'bundled' }), /none/);
+});
+
+test('names the stylesheet file in every description (#40)', () => {
+  for (const origin of ['option', 'user-default', 'bundled'] as const) {
+    const described = describeStylesheet({ path: BUNDLED, origin });
+
+    assert.ok(described.includes(BUNDLED), `${origin}: ${described}`);
+  }
 });

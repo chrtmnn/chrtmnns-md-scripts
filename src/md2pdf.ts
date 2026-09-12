@@ -17,6 +17,7 @@ import { renderHtml } from './steps/render-html';
 import { renderPdf } from './steps/render-pdf';
 import { resolveOptions, collect } from './steps/resolve-options';
 import { runDoctoc, shouldRunDoctoc } from './steps/run-doctoc';
+import { describeStylesheet } from './steps/stylesheet-lookup';
 import { ConverterOptions } from './types';
 
 program
@@ -25,7 +26,10 @@ program
   .argument('[files...]', 'Markdown files or directories to convert')
   .option('-R, --recursive', 'Expand directory arguments recursively')
   .option('--merge <name>', 'Merge all resolved Markdown files into a single PDF with this base name')
-  .option('-s, --stylesheet <path>', 'Stylesheet path, or the name of a stylesheet in ~/.md2pdf (".css" optional)')
+  .option(
+    '-s, --stylesheet <path>',
+    'Stylesheet path, or the name of a stylesheet in ~/.md2pdf (".css" optional); "default" forces the bundled one',
+  )
   .option('--css-var <name=value>', 'Override a CSS custom property, repeatable', collect, [])
   .option('-o, --output-dir <path>', 'Output directory for PDFs')
   .option('-r, --temp-root <path>', 'Root directory for temp work dirs')
@@ -84,6 +88,12 @@ async function run(options: ConverterOptions): Promise<void> {
   }
 
   intro('md2pdf');
+
+  // A personal ~/.md2pdf/default.css replaces the bundled stylesheet without
+  // any flag, so --verbose says which one is in use and why.
+  if (options.verbose) {
+    log.info(describeStylesheet({ path: options.stylesheet, origin: options.stylesheetOrigin }));
+  }
 
   // Positional arguments may be files or directories; expand them into the
   // concrete list of Markdown files before anything else runs.

@@ -2,11 +2,14 @@
  * Lookup rules for the `-s/--stylesheet` value: a path resolved against the
  * directory `md2pdf` was called from, or a bare name that falls back to the
  * per-user config directory (`~/.md2pdf`), where the `.css` extension is
- * optional. Kept separate from `resolve-options.ts`, which supplies the
- * environment and the filesystem, so the rules can be exercised directly.
+ * optional. Also covers the choice made when no `-s` is given at all, where a
+ * personal `<config dir>/default.css` takes the place of the bundled
+ * stylesheet (#40). Kept separate from `resolve-options.ts`, which supplies
+ * the environment and the filesystem, so the rules can be exercised directly.
  */
 
 import path from 'path';
+import { StylesheetOrigin } from '../types';
 
 /** Overrides the per-user config directory, e.g. for tests. */
 export const CONFIG_DIR_ENV = 'MD2PDF_CONFIG_DIR';
@@ -17,6 +20,39 @@ export const CONFIG_DIR_ENV = 'MD2PDF_CONFIG_DIR';
  * caller's directory there.
  */
 export const INVOCATION_DIR_ENV = 'MD2PDF_INVOCATION_DIR';
+
+/**
+ * Reserved `-s` value that always selects the bundled stylesheet, so a single
+ * run can ignore a personal `<config dir>/default.css` without naming the
+ * bundled file's path, which differs per machine. Matched exactly: neither
+ * the invocation directory nor the config directory is consulted for it, and
+ * `-s default.css` still refers to the personal file.
+ */
+export const BUNDLED_STYLESHEET_VALUE = 'default';
+
+/**
+ * Name of the personal default stylesheet inside the config directory, used
+ * when no `-s` is given.
+ */
+export const USER_DEFAULT_STYLESHEET = 'default.css';
+
+/** Directories a stylesheet can be resolved from. */
+export type StylesheetLocations = {
+  /** Directory `md2pdf` was called from. */
+  invocationDir: string;
+  /** Per-user config directory, see {@link configDirectory}. */
+  configDir: string;
+  /** Absolute path of the bundled `src/css/default.css`. */
+  bundledStylesheet: string;
+};
+
+/** The stylesheet a run should use, and where it came from. */
+export type StylesheetChoice = {
+  /** Absolute path, or undefined when not even the bundled stylesheet exists. */
+  path?: string;
+  /** Why this stylesheet was picked. */
+  origin: StylesheetOrigin;
+};
 
 /**
  * Returns the per-user config directory that holds named stylesheets.
@@ -97,4 +133,67 @@ export function findStylesheet(
 
   const tried = candidates.map((candidate) => `  - ${candidate}`).join('\n');
   throw new Error(`Stylesheet not found: ${value}\nTried:\n${tried}`);
+}
+
+/**
+ * Picks the stylesheet for a whole run:
+ *
+ * 1. `-s default` — the bundled stylesheet, never a lookup (#40);
+ * 2. any other `-s <value>` — {@link findStylesheet};
+ * 3. no `-s`, with `<config dir>/default.css` present — that file, which
+ *    replaces the bundled stylesheet completely;
+ * 4. no `-s` — the bundled stylesheet, or nothing when it is missing.
+ *
+ * @param value - Raw `-s` value, or undefined when the option was not given.
+ * @param locations - Directories to resolve against.
+ * @param isFile - Reports whether a path is an existing file.
+ * @returns The chosen stylesheet and its origin.
+ * @throws When an explicit `-s` value matches nothing, including `-s default`
+ *   in a checkout whose bundled stylesheet is missing.
+ */
+export function chooseStylesheet(
+  value: string | undefined,
+  { invocationDir, configDir, bundledStylesheet }: StylesheetLocations,
+  isFile: (file: string) => boolean,
+): StylesheetChoice {
+  if (value === BUNDLED_STYLESHEET_VALUE) {
+    if (!isFile(bundledStylesheet)) {
+      throw new Error(`Stylesheet not found: ${bundledStylesheet}`);
+    }
+    return { path: bundledStylesheet, origin: 'bundled' };
+  }
+
+  if (value) {
+    return { path: findStylesheet(value, invocationDir, configDir, isFile), origin: 'option' };
+  }
+
+  const userDefault = path.join(configDir, USER_DEFAULT_STYLESHEET);
+  if (isFile(userDefault)) {
+    return { path: userDefault, origin: 'user-default' };
+  }
+
+  // A checkout without the bundled stylesheet still converts, just unstyled;
+  // unlike an explicit `-s`, nothing was asked for that could be denied.
+  return { path: isFile(bundledStylesheet) ? bundledStylesheet : undefined, origin: 'bundled' };
+}
+
+/**
+ * Formats the `--verbose` line that names the stylesheet in use and why it
+ * was picked, so a silently applied personal default is visible.
+ *
+ * @param choice - The chosen stylesheet, from {@link chooseStylesheet}.
+ * @returns A single line of log output.
+ */
+export function describeStylesheet({ path: stylesheet, origin }: StylesheetChoice): string {
+  if (!stylesheet) {
+    return 'Stylesheet: none (the bundled default is missing from the checkout)';
+  }
+
+  const reasons: Record<StylesheetOrigin, string> = {
+    option: '-s',
+    'user-default': `personal default, overrides the bundled one; -s ${BUNDLED_STYLESHEET_VALUE} forces that one`,
+    bundled: 'bundled default',
+  };
+
+  return `Stylesheet: ${stylesheet} (${reasons[origin]})`;
 }
