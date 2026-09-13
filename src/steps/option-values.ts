@@ -42,6 +42,9 @@ export function parseMergeName(value: string): string {
 /**
  * Parses `--css-var name=value` entries into normalized CSS custom properties.
  *
+ * A value that could escape the generated `:root {}` block is rejected: `{`,
+ * `}`, `;` and a comment delimiter (`/*`, `*` + `/`).
+ *
  * @param values - Raw CLI values collected from `--css-var`.
  * @returns Validated CSS variable overrides.
  */
@@ -60,7 +63,10 @@ export function parseCssVars(values: string[]): CssVarOverride[] {
       throw new Error(`Invalid CSS variable name: ${rawName}`);
     }
 
-    if (!value || /[{};]/.test(value)) {
+    // `/*` escapes the generated `:root {}` block as thoroughly as `}` does:
+    // it comments out the rest of the block, so every later override — and
+    // the closing brace — silently disappears (#46).
+    if (!value || /[{};]/.test(value) || value.includes('/*') || value.includes('*/')) {
       throw new Error(`Invalid CSS variable value for ${rawName}: ${value}`);
     }
 

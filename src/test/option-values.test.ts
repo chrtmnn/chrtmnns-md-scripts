@@ -85,3 +85,8 @@ test('parseMergeName rejects characters that are illegal in a file name', () => 
     );
   }
 });
+
+test('parseCssVars rejects a value carrying a comment delimiter (#46)', () => {
+  assert.throws(() => parseCssVars(['page-size=A4 /*']), /Invalid CSS variable value/);
+  assert.throws(() => parseCssVars(['page-size=A4 */']), /Invalid CSS variable value/);
+});

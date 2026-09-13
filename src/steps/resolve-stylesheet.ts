@@ -9,6 +9,7 @@ import {
   wrapInImportConditions,
 } from './css-import-conditions';
 import { HOISTED_IMPORT_MARKER, hoistRemoteImports, restateImport } from './css-import-hoisting';
+import { replaceInLiveCss } from './css-structure';
 
 /**
  * MIME types for local assets that get inlined as `data:` URIs, keyed by
@@ -45,10 +46,6 @@ const IMPORT_PATTERN = /@import\s+(?:url\(\s*(['"]?)([^'")]*)\1\s*\)|(['"])([^'"
 // images, etc.). Deliberately excludes `@import url(...)`, which the pattern
 // above already consumes.
 const URL_PATTERN = /url\(\s*(['"]?)([^'")]*)\1\s*\)/g;
-
-// A block comment, including an unterminated one that runs to the end of the
-// file. Captured so that `split` keeps the comments at the odd indices.
-const COMMENT_PATTERN = /(\/\*[\s\S]*?(?:\*\/|$))/;
 
 /**
  * Resolves the stylesheet path for the entire run.
@@ -164,8 +161,17 @@ function inlineLocalReferences(
   const dir = path.dirname(filePath);
   let css = fs.readFileSync(filePath, 'utf8');
 
-  css = replaceOutsideComments(css, IMPORT_PATTERN, (match, _urlQuote, urlTarget, _stringQuote, stringTarget, conditionText) => {
+  css = replaceInLiveCss(css, IMPORT_PATTERN, (depth, match, _urlQuote, urlTarget, _stringQuote, stringTarget, conditionText) => {
     const target = urlTarget || stringTarget;
+
+    if (depth > 0) {
+      // An `@import` inside a block is invalid CSS that the browser ignores
+      // where it stands. Hoisting it out would make it apply — and apply
+      // *unconditionally*, since the block's `@layer`/`@media`/`@supports`
+      // condition is not part of the import chain (#46). Left as written.
+      return match;
+    }
+
     const conditions = inFile(filePath, () => parseImportConditions(conditionText));
 
     if (!isLocalReference(target)) {
@@ -180,7 +186,7 @@ function inlineLocalReferences(
     return wrapInImportConditions(imported, conditions);
   });
 
-  css = replaceOutsideComments(css, URL_PATTERN, (match, _quote, target) => {
+  css = replaceInLiveCss(css, URL_PATTERN, (_depth, match, _quote, target) => {
     if (!isLocalReference(target)) {
       return match;
     }
@@ -215,27 +221,6 @@ function inFile<T>(filePath: string, step: () => T): T {
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : String(error)} in ${filePath}`);
   }
-}
-
-/**
- * Applies `String.prototype.replace` to the parts of `css` outside block
- * comments, so a commented-out `@import` or `url()` is neither inlined nor
- * reported as missing. The comments themselves are kept verbatim.
- *
- * @param css - CSS text to rewrite.
- * @param pattern - Global pattern to replace.
- * @param replacer - Replacement callback, as for `String.prototype.replace`.
- * @returns The rewritten CSS text.
- */
-function replaceOutsideComments(
-  css: string,
-  pattern: RegExp,
-  replacer: (match: string, ...groups: string[]) => string,
-): string {
-  return css
-    .split(COMMENT_PATTERN)
-    .map((part, index) => (index % 2 === 1 ? part : part.replace(pattern, replacer)))
-    .join('');
 }
 
 /**
