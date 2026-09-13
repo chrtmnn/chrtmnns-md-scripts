@@ -250,3 +250,21 @@ test('an explicitly passed symlinked file is followed', (t) => {
 
   assert.deepEqual(files, [link], 'the user-supplied spelling is preserved');
 });
+
+test('a symlink and its target are the same file and converted once (#49)', (t) => {
+  const dir = tempDir(t);
+  const real = writeFile(dir, 'real.md', '# Real');
+  const link = path.join(dir, 'link.md');
+
+  if (!trySymlink(real, link, 'file')) {
+    t.skip('creating symlinks requires Developer Mode or elevation on Windows');
+    return;
+  }
+
+  assert.deepEqual(resolveInputs([real, link], makeOptions()).files, [real]);
+  assert.deepEqual(
+    resolveInputs([link, real], makeOptions()).files,
+    [link],
+    'the first spelling given wins',
+  );
+});

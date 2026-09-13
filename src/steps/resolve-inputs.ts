@@ -165,9 +165,9 @@ function collectFromDirectory(dir: string, recursive: boolean, collected: string
  * Markdown file positionals are kept as they are, other existing files are
  * rejected, and directory positionals contribute the `*.md` files they
  * contain at their own position in the list. The final
- * list is deduplicated by resolved absolute path, keeping the first
- * occurrence, so passing both a folder and a file inside it converts that
- * file once.
+ * list is deduplicated by real path (`fs.realpathSync`), keeping the first
+ * occurrence, so passing both a folder and a file inside it — or a symlink
+ * and its target — converts that file once.
  *
  * @param positionals - Raw positional arguments as received from Commander.
  * @param options - Resolved converter options carrying the `--recursive` flag.
@@ -180,12 +180,23 @@ export function resolveInputs(positionals: string[], options: ConverterOptions):
   const seen = new Set<string>();
 
   /**
-   * Adds a path to the result unless an equal absolute path was already
-   * added. Windows paths are compared case-insensitively.
+   * Adds a path to the result unless the same file was already added.
+   *
+   * The key is the *real* path: a symlink and its target are one file, and
+   * converting it twice writes the same PDF twice — or, with `--merge`, puts
+   * the same document into the PDF twice (#49). A path that cannot be
+   * resolved (a missing positional, which is forwarded on purpose) falls back
+   * to its absolute form. Windows paths are compared case-insensitively.
    */
   const add = (candidate: string): void => {
-    const absolute = path.resolve(candidate);
-    const key = process.platform === 'win32' ? absolute.toLowerCase() : absolute;
+    let resolved: string;
+    try {
+      resolved = fs.realpathSync(candidate);
+    } catch {
+      resolved = path.resolve(candidate);
+    }
+
+    const key = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
     if (seen.has(key)) {
       return;
     }

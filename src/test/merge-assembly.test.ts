@@ -8,7 +8,12 @@
 import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DOCUMENT_BREAK_HTML, commonAncestorDirectory, joinDocuments } from '../steps/merge-assembly';
+import {
+  DOCUMENT_BREAK_HTML,
+  commonAncestorDirectory,
+  joinDocuments,
+  removeFrontmatter,
+} from '../steps/merge-assembly';
 
 /**
  * Builds an absolute path from segments in a platform-correct way, so the same
@@ -78,4 +83,20 @@ test('joinDocuments adds no separator for a single document', () => {
 test('joinDocuments always terminates the merged file with exactly one newline', () => {
   assert.equal(joinDocuments(['a', 'b']).endsWith('b\n'), true);
   assert.equal(joinDocuments(['a', 'b']).endsWith('\n\n'), false);
+});
+
+test('removeFrontmatter drops a leading block and reports it (#49)', () => {
+  assert.deepEqual(removeFrontmatter('---\ntitle: B\n---\n\n# B\n'), { body: '# B\n', removed: true });
+  assert.deepEqual(removeFrontmatter('# B\n'), { body: '# B\n', removed: false });
+  assert.deepEqual(removeFrontmatter('text\n\n---\ntitle: not frontmatter\n---\n'), {
+    body: 'text\n\n---\ntitle: not frontmatter\n---\n',
+    removed: false,
+  });
+});
+
+test('joinDocuments skips an empty document instead of emitting two breaks (#49)', () => {
+  const merged = joinDocuments(['# A', '', '# C']);
+
+  assert.equal(merged, `# A\n\n${DOCUMENT_BREAK_HTML}\n\n# C\n`);
+  assert.equal(merged.split(DOCUMENT_BREAK_HTML).length - 1, 1);
 });

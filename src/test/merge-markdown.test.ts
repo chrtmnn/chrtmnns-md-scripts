@@ -186,3 +186,44 @@ test('leaves image targets that do not resolve exactly as written (#28)', (t) =>
   assert.equal(merged.includes('![gone](images/missing.png)'), true);
   assert.equal(merged.includes('![remote](https://example.com/x.png)'), true);
 });
+
+test('keeps only the first document frontmatter and warns about the rest (#49)', (t) => {
+  const dir = tempDir(t);
+  const a = writeFile(dir, 'a.md', '---\ntitle: A\n---\n\n# A\n');
+  const b = writeFile(dir, 'b.md', '---\ntitle: B\npdf_options:\n  format: A5\n---\n\n# B\n');
+
+  const result = merge(t, [a, b], makeOptions({ merge: 'combined' }));
+  const merged = fs.readFileSync(result.mergedFile, 'utf8');
+
+  assert.equal(merged, `---\ntitle: A\n---\n\n# A\n\n${DOCUMENT_BREAK_HTML}\n\n# B\n`);
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /Dropped the YAML frontmatter of 1 document/);
+});
+
+test('an empty input file does not add a second page break (#49)', (t) => {
+  const dir = tempDir(t);
+  const a = writeFile(dir, 'a.md', '# A\n');
+  const empty = writeFile(dir, 'empty.md', '');
+  const c = writeFile(dir, 'c.md', '# C\n');
+
+  const merged = fs.readFileSync(
+    merge(t, [a, empty, c], makeOptions({ merge: 'combined' })).mergedFile,
+    'utf8',
+  );
+
+  assert.equal(merged, `# A\n\n${DOCUMENT_BREAK_HTML}\n\n# C\n`);
+});
+
+test('a document holding nothing but frontmatter contributes no section (#49)', (t) => {
+  const dir = tempDir(t);
+  const a = writeFile(dir, 'a.md', '# A\n');
+  const meta = writeFile(dir, 'meta.md', '---\ntitle: Meta\n---\n');
+  const c = writeFile(dir, 'c.md', '# C\n');
+
+  const merged = fs.readFileSync(
+    merge(t, [a, meta, c], makeOptions({ merge: 'combined' })).mergedFile,
+    'utf8',
+  );
+
+  assert.equal(merged, `# A\n\n${DOCUMENT_BREAK_HTML}\n\n# C\n`);
+});

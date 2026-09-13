@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { ConverterOptions } from '../types';
 import { absolutizeImageTargets } from './inline-assets';
-import { commonAncestorDirectory, joinDocuments } from './merge-assembly';
+import { commonAncestorDirectory, joinDocuments, removeFrontmatter } from './merge-assembly';
 import { stripBom } from './markdown-scan';
 
 /**
@@ -56,16 +56,22 @@ function createMergeDirectory(options: ConverterOptions, targetDir: string): str
  * is simplest) and trims trailing whitespace so the caller can guarantee a
  * blank line between documents even when a file does not end in a newline.
  *
+ * Frontmatter is kept only on the first document, where md-to-pdf still
+ * parses it; in any later one the same block would render as content (#49).
+ *
  * Image targets are pinned to the document they came from: concatenation is
  * the last moment at which each section's own directory is still known, and
  * `inlineAssets` later embeds those absolute paths as `data:` URIs.
  *
  * @param file - Absolute path of the source Markdown file.
- * @returns The normalised document body without trailing whitespace.
+ * @param isFirst - Whether this is the first document of the merge.
+ * @returns The normalised body and whether frontmatter had to be dropped.
  */
-function readDocument(file: string): string {
-  const raw = fs.readFileSync(file, 'utf8');
-  return absolutizeImageTargets(stripBom(raw).trimEnd(), path.dirname(file));
+function readDocument(file: string, isFirst: boolean): { body: string; droppedFrontmatter: boolean } {
+  const raw = stripBom(fs.readFileSync(file, 'utf8')).trimEnd();
+  const { body, removed } = isFirst ? { body: raw, removed: false } : removeFrontmatter(raw);
+
+  return { body: absolutizeImageTargets(body, path.dirname(file)), droppedFrontmatter: removed };
 }
 
 /**
@@ -130,7 +136,16 @@ export function mergeMarkdown(files: string[], options: ConverterOptions): Merge
     );
   }
 
-  const content = joinDocuments(existing.map(readDocument));
+  const documents = existing.map((file, index) => readDocument(file, index === 0));
+  const droppedFrontmatter = documents.filter((document) => document.droppedFrontmatter).length;
+
+  if (droppedFrontmatter > 0) {
+    warnings.push(
+      `Dropped the YAML frontmatter of ${droppedFrontmatter} document${droppedFrontmatter === 1 ? '' : 's'}: only the first document's is parsed, any later one would render as content.`,
+    );
+  }
+
+  const content = joinDocuments(documents.map((document) => document.body));
 
   fs.mkdirSync(targetDir, { recursive: true });
   const mergeDir = createMergeDirectory(options, targetDir);

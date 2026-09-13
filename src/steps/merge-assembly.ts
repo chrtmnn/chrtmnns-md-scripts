@@ -7,6 +7,7 @@
  */
 
 import path from 'path';
+import { findFrontmatterEnd } from './markdown-scan';
 
 /**
  * Separator inserted between two consecutive source documents in a merged
@@ -83,6 +84,31 @@ export function commonAncestorDirectory(files: string[]): string {
 }
 
 /**
+ * Removes a leading YAML frontmatter block from a document body.
+ *
+ * Only the *first* document's frontmatter sits where md-to-pdf parses it; in
+ * every later document the same block is ordinary content and renders as a
+ * horizontal rule plus an invented heading carrying the raw YAML, which
+ * `--force-doctoc` then lists in the table of contents (#49). A `docs/`
+ * folder whose files all carry frontmatter is the normal case, so the block
+ * is dropped rather than rendered.
+ *
+ * @param document - Document body, already BOM-stripped.
+ * @returns The body without its leading frontmatter block, right-trimmed at
+ *   the front, and whether a block was removed.
+ */
+export function removeFrontmatter(document: string): { body: string; removed: boolean } {
+  const lines = document.split(/\r\n|\n/);
+  const end = findFrontmatterEnd(lines);
+
+  if (end === -1) {
+    return { body: document, removed: false };
+  }
+
+  return { body: lines.slice(end + 1).join('\n').replace(/^\s+/, ''), removed: true };
+}
+
+/**
  * Joins normalised document bodies into the merged Markdown contents.
  *
  * Blank lines around every section guarantee that a file without a trailing
@@ -90,18 +116,24 @@ export function commonAncestorDirectory(files: string[]): string {
  * separator is parsed as its own HTML block. The result always ends in a
  * single newline.
  *
+ * A document with no content left — an empty input file, or one holding
+ * nothing but frontmatter — contributes no section and therefore no break,
+ * which used to produce two consecutive page breaks and a blank page (#49).
+ *
  * @param documents - Document bodies, already BOM-stripped and right-trimmed.
  * @returns The merged Markdown contents.
  */
 export function joinDocuments(documents: string[]): string {
   const sections: string[] = [];
 
-  documents.forEach((document, index) => {
-    if (index > 0) {
-      sections.push(DOCUMENT_BREAK_HTML);
-    }
-    sections.push(document);
-  });
+  documents
+    .filter((document) => document.trim() !== '')
+    .forEach((document, index) => {
+      if (index > 0) {
+        sections.push(DOCUMENT_BREAK_HTML);
+      }
+      sections.push(document);
+    });
 
   return `${sections.join('\n\n')}\n`;
 }
