@@ -1,37 +1,25 @@
 /**
  * Resolution of the parsed Commander options into `ConverterOptions`.
  *
- * `md2pdf.ts` parses `process.argv` as soon as it is imported, so the program
- * is rebuilt here with the same option definitions. Keep `parse` in step with
- * the `program` declaration in `md2pdf.ts`.
+ * The arguments are parsed by the real program declaration from
+ * `cli-program.ts`, so option conflicts are covered too. Commander throws
+ * instead of exiting and its error output is silenced.
  */
 
 import path from 'path';
 import test, { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { Command } from 'commander';
+import { createProgram } from '../cli-program';
 import { collect, resolveOptions } from '../steps/resolve-options';
 import { comparablePath, tempDir, writeFile } from './helpers';
 
 const PACKAGE_ENV_VARS = ['DOCTOC_PKG', 'MERMAID_CLI_PKG', 'MD_TO_PDF_PKG'] as const;
 
 function parse(args: string[]): Command {
-  return new Command()
+  return createProgram()
     .exitOverride()
-    .argument('[files...]')
-    .option('-R, --recursive')
-    .option('--merge <name>')
-    .option('-s, --stylesheet <path>')
-    .option('--css-var <name=value>', '', collect, [])
-    .option('-o, --output-dir <path>')
-    .option('-r, --temp-root <path>')
-    .option('-p, --temp-in-output')
-    .option('-f, --force-doctoc')
-    .option('-u, --update-md-toc')
-    .option('-k, --keep-temp')
-    .option('--verbose')
-    .option('--debug')
-    .option('--png')
+    .configureOutput({ writeErr: () => {} })
     .parse(args, { from: 'user' });
 }
 
@@ -303,4 +291,19 @@ test('lists every tried location for an unknown stylesheet name (#34)', (t) => {
       `  - ${path.join(config, 'missing.css')}`,
     ].join('\n'),
   });
+});
+
+test('rejects -p together with -r in either order and form (#60)', () => {
+  const conflict = /option '-p, --temp-in-output' cannot be used with option '-r, --temp-root <path>'/;
+
+  assert.throws(() => parse(['-p', '-r', 'scratch', 'doc.md']), conflict);
+  assert.throws(() => parse(['-r', 'scratch', '-p', 'doc.md']), conflict);
+  assert.throws(() => parse(['--temp-in-output', '--temp-root=scratch', 'doc.md']), conflict);
+});
+
+test('rejects -u together with --merge before any work starts (#60)', () => {
+  const combined = /-u cannot be combined with --merge/;
+
+  assert.throws(() => resolveOptions(parse(['-u', '--merge', 'handbook', 'a.md', 'b.md'])), combined);
+  assert.throws(() => resolveOptions(parse(['--merge=handbook', '--update-md-toc', 'a.md'])), combined);
 });

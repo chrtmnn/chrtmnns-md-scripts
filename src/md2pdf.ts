@@ -3,9 +3,11 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { program } from 'commander';
+import { createProgram } from './cli-program';
 import { cleanup } from './steps/cleanup';
 import { assertOutputReplaceable, copyOutput } from './steps/copy-output';
+import { describeUnusedCssVar, findUnusedCssVars } from './steps/css-var-usage';
+import { describeMissingMarkerBlock, scanDoctocMarkers } from './steps/doctoc-markers';
 import { MergedInput, mergeMarkdown } from './steps/merge-markdown';
 import { describeOutputCollisions, findOutputCollisions } from './steps/output-targets';
 import { resolveInputs } from './steps/resolve-inputs';
@@ -16,32 +18,12 @@ import { prepareWorkdir } from './steps/prepare-workdir';
 import { hasMermaidFences, renderMermaid } from './steps/render-mermaid';
 import { renderHtml } from './steps/render-html';
 import { renderPdf } from './steps/render-pdf';
-import { resolveOptions, collect } from './steps/resolve-options';
+import { resolveOptions } from './steps/resolve-options';
 import { runDoctoc, shouldRunDoctoc } from './steps/run-doctoc';
 import { describeStylesheet } from './steps/stylesheet-lookup';
 import { ConverterOptions } from './types';
 
-program
-  .name('md2pdf')
-  .description('Render Mermaid diagrams and convert Markdown to PDF')
-  .argument('[files...]', 'Markdown files or directories to convert')
-  .option('-R, --recursive', 'Expand directory arguments recursively')
-  .option('--merge <name>', 'Merge all resolved Markdown files into a single PDF with this base name')
-  .option(
-    '-s, --stylesheet <path>',
-    'Stylesheet path, or the name of a stylesheet in ~/.md2pdf (".css" optional); "default" forces the bundled one',
-  )
-  .option('--css-var <name=value>', 'Override a CSS custom property, repeatable', collect, [])
-  .option('-o, --output-dir <path>', 'Output directory for PDFs')
-  .option('-r, --temp-root <path>', 'Root directory for temp work dirs')
-  .option('-p, --temp-in-output', 'Place temp dir inside the output directory')
-  .option('-f, --force-doctoc', 'Force doctoc even when no TOC markers are present')
-  .option('-u, --update-md-toc', 'Update an existing doctoc table of contents in the source Markdown')
-  .option('-k, --keep-temp', 'Keep temp working directory')
-  .option('--verbose', 'Print output from external conversion tools')
-  .option('--debug', 'Also emit a standalone HTML file next to the PDF')
-  .option('--png', 'Render Mermaid diagrams as PNG instead of SVG')
-  .parse(process.argv);
+const program = createProgram().parse(process.argv);
 
 if (program.args.length === 0) {
   program.help();
@@ -158,6 +140,13 @@ async function run(options: ConverterOptions): Promise<void> {
   try {
     const effectiveStylesheet = resolveStylesheet(options, cssTempDir);
 
+    // An override the stylesheet never reads is written out and ignored by
+    // the browser, which a typo in the name would otherwise leave invisible.
+    if (effectiveStylesheet && options.cssVars.length > 0) {
+      const css = fs.readFileSync(effectiveStylesheet, 'utf8');
+      findUnusedCssVars(css, options.cssVars).forEach((name) => log.warn(describeUnusedCssVar(name)));
+    }
+
     for (const file of filesToConvert) {
       log.info(merged ? `${merged.mergedCount} documents merged` : path.resolve(file));
 
@@ -174,6 +163,11 @@ async function run(options: ConverterOptions): Promise<void> {
         // Checked before `-u` can write back to the source and before any
         // rendering, so a protected output fails the file without side effects.
         assertOutputReplaceable(context);
+        // `-u` only refreshes an existing marker block. A broken pair is
+        // reported by runDoctoc, and a merged run cannot carry `-u`.
+        if (options.updateMdToc && scanDoctocMarkers(fs.readFileSync(context.sourceFile, 'utf8')).kind === 'none') {
+          log.warn(describeMissingMarkerBlock(context.sourceFile, options.forceDoctoc));
+        }
         if (shouldRunDoctoc(options, context.sourceFile)) {
           runStep('Table of contents', () => runDoctoc(context));
         }

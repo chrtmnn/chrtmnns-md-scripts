@@ -147,6 +147,24 @@ export function scanDoctocMarkers(raw: string): DoctocMarkers {
 }
 
 /**
+ * Formats the warning for `-u` on a document whose marker scan is `none`:
+ * `-u` only refreshes an existing block and never adds one to the source, so
+ * the flag has no effect on that file (#60).
+ *
+ * @param sourceFile - Path of the source Markdown file.
+ * @param forceDoctoc - Whether `-f` was given, which already puts a TOC into
+ *   the PDF and makes the `-f` hint pointless.
+ * @returns The warning text, naming the file.
+ */
+export function describeMissingMarkerBlock(sourceFile: string, forceDoctoc: boolean): string {
+  const advice = forceDoctoc
+    ? 'Add the marker block to keep a TOC in it (see README, "Table of Contents Markers"); -f alone only adds one to the PDF.'
+    : 'Add the marker block (see README, "Table of Contents Markers") or use -f for a TOC in the PDF only.';
+
+  return `${sourceFile} has no doctoc marker block; the source file was not updated. ${advice}`;
+}
+
+/**
  * Hides every documented (non-genuine) doctoc marker from doctoc by inserting
  * {@link MASK} after its `<!--`, so doctoc only ever sees genuine markers.
  * Line count and every other byte stay unchanged; genuine marker lines are

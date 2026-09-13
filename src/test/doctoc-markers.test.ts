@@ -13,6 +13,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  describeMissingMarkerBlock,
   isTocOnlyRefresh,
   maskDocumentedMarkers,
   scanDoctocMarkers,
@@ -195,4 +196,14 @@ test('isTocOnlyRefresh accepts a changed TOC block and rejects any other change'
   assert.equal(isTocOnlyRefresh(before, doc(['# Title', '', START, '- new', END])), false);
   assert.equal(isTocOnlyRefresh(before, doc(['# Title', '', START, '- new'])), false);
   assert.equal(isTocOnlyRefresh(doc(['# Title']), refreshed), false);
+});
+
+test('describeMissingMarkerBlock names the file and offers -f only when it is not given (#60)', () => {
+  const withoutForce = describeMissingMarkerBlock('docs/plain.md', false);
+  const withForce = describeMissingMarkerBlock('docs/plain.md', true);
+
+  assert.match(withoutForce, /^docs\/plain\.md has no doctoc marker block; the source file was not updated\./);
+  assert.match(withoutForce, /or use -f for a TOC in the PDF only\.$/);
+  assert.match(withForce, /^docs\/plain\.md has no doctoc marker block/);
+  assert.match(withForce, /-f alone only adds one to the PDF\.$/);
 });
