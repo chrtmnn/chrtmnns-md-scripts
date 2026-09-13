@@ -8,6 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  classifyLines,
   findFirstH2Index,
   findFirstHeading,
   findFrontmatterEnd,
@@ -277,4 +278,11 @@ test('findFirstHeading recognises setext headings at both levels', () => {
   assert.deepEqual(findFirstHeading(['Underlined', '===']), { level: 1, text: 'Underlined' });
   assert.deepEqual(findFirstHeading(['Underlined', '---']), { level: 2, text: 'Underlined' });
   assert.equal(findFirstHeading(['Trailing text with no underline']), null);
+});
+
+test('classifyLines tells content, fences and HTML comment blocks apart', () => {
+  assert.deepEqual(
+    classifyLines(lines('text\n```md\n<!-- x -->\n```\n<!-- one -->\n<!--\ninside\n-->\nafter `<!--` code')),
+    ['content', 'fence', 'fence', 'fence', 'comment-start', 'comment-start', 'comment', 'comment', 'content'],
+  );
 });
