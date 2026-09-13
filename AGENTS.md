@@ -70,7 +70,8 @@ its own module rather than being `export`ed out of a file that also does I/O.
 check, out of `run-doctoc.ts`),
 `merge-assembly.ts` (concatenation and common-ancestor computation, out of
 `merge-markdown.ts`), `option-values.ts` (`--css-var` / `--merge`
-validation, out of `resolve-options.ts`), `css-import-conditions.ts`
+validation, out of `resolve-options.ts`), `css-var-usage.ts` (the unused
+`--css-var` check, out of `md2pdf.ts`), `css-import-conditions.ts`
 (`@import` layer/supports/media parsing, out of `resolve-stylesheet.ts`),
 `npx-invocation.ts` (the shell-free npx lookup and error formatting, out of
 `run-npx.ts`), `css-import-hoisting.ts` (remote `@import` placement and
@@ -86,7 +87,9 @@ The project is a CLI toolsuite for converting Markdown to PDF with Mermaid diagr
 
 ### Pipeline model (`src/md2pdf.ts`)
 
-`md2pdf` is the main entry point. After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / per-step spinner / `outro` UI. Each step is wrapped by a local `runStep(label, action)` helper that drives a spinner (or `log.info`/`log.success` when `--verbose` is set).
+`md2pdf` is the main entry point. The command line itself is declared in `src/cli-program.ts` (`createProgram()`), so `resolve-options.test.ts` parses against the real declarations instead of a copy; `md2pdf.ts` parses `process.argv` as soon as it is imported and is therefore never loaded by a test. Option combinations that cannot be honoured are rejected before any work starts (#60): `-p` declares a Commander conflict with `-r`, and `resolveOptions` throws for `-u` together with `--merge`.
+
+After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / per-step spinner / `outro` UI. Each step is wrapped by a local `runStep(label, action)` helper that drives a spinner (or `log.info`/`log.success` when `--verbose` is set).
 
 Each per-file step is a function that accepts a `ConversionContext` and **mutates it in place**. These steps return `void`, except `inlineAssets`, which returns the non-fatal warnings the caller surfaces via `log.warn`. Steps run in order; `cleanup` runs in a `finally` block unconditionally.
 
@@ -148,7 +151,7 @@ Three guards keep a run from destroying files it did not mean to replace (#45):
 
 ### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
 
-`runDoctoc` runs automatically when the source file contains a **genuine** doctoc START marker: a line that opens an HTML comment block with `<!-- START doctoc `, outside fenced code and other comment blocks. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. doctoc itself only ever runs on the temp copy. The `-u`/`--update-md-toc` flag writes the refreshed copy back to the original Markdown file when the source has a genuine marker pair, and only if nothing outside the TOC block changed (`isTocOnlyRefresh`).
+`runDoctoc` runs automatically when the source file contains a **genuine** doctoc START marker: a line that opens an HTML comment block with `<!-- START doctoc `, outside fenced code and other comment blocks. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. doctoc itself only ever runs on the temp copy. The `-u`/`--update-md-toc` flag writes the refreshed copy back to the original Markdown file when the source has a genuine marker pair, and only if nothing outside the TOC block changed (`isTocOnlyRefresh`). For a source whose scan is `none`, `-u` has no effect, so `md2pdf.ts` warns with `describeMissingMarkerBlock` before the doctoc step — also under `-f`, which only puts the TOC into the PDF. `-u` is rejected together with `--merge`: the pipeline would run over the concatenated temp file, and the write-back would refresh that copy instead of any source.
 
 doctoc 2.3.0 is not fence-aware: it takes the first line matching `<!-- START doctoc ` anywhere and, without an END marker after it, replaces everything to the end of the file (#44). The pure rules in `src/steps/doctoc-markers.ts` guard against that. `scanDoctocMarkers` classifies the source as `none` / `pair` / `broken`. `maskDocumentedMarkers` hides every non-genuine marker occurrence (fenced, inline or indented code, comments) from doctoc by inserting U+E000 after its `<!--`, and `unmaskDocumentedMarkers` restores them after the run, so documented examples survive byte-identically. A genuine START marker without a following END marker (`broken`) fails that file before doctoc runs.
 
@@ -169,7 +172,7 @@ This is a documented heuristic, not a CommonMark parser. Backslash-escaped hashe
 
 ### Temp directory strategy
 
-Each conversion creates an isolated temp directory via `fs.mkdtempSync(path.join(base, `${stem}_`))` (`stem_` followed by 6 random characters chosen by Node, e.g. `stem_aB3xQ9`). `mkdtempSync` creates the directory atomically, so a name collision fails loudly instead of two runs silently sharing a directory. Location, in order of precedence (`-p` wins over `-r` when both are given; `merge-markdown.ts` follows the same order for the merge temp directory):
+Each conversion creates an isolated temp directory via `fs.mkdtempSync(path.join(base, `${stem}_`))` (`stem_` followed by 6 random characters chosen by Node, e.g. `stem_aB3xQ9`). `mkdtempSync` creates the directory atomically, so a name collision fails loudly instead of two runs silently sharing a directory. Location (`-p` and `-r` are mutually exclusive, which Commander enforces; `prepare-workdir.ts` and `merge-markdown.ts` still check `-p` first, and the merge temp directory follows the same rules):
 - `-p`: inside the output directory (or source dir if `-o` is absent)
 - `-r <root>`: custom root directory
 - Default: OS temp dir
@@ -222,7 +225,7 @@ Tests must never touch the real home directory: the lookup rules take both direc
 
 ### CSS variable system
 
-`src/css/default.css` defines all CSS custom properties. `--css-var name=value` (repeatable, leading `--` optional) injects overrides into a `:root {}` block appended to the base stylesheet in a merged temp file (`style-overrides.css`). Key properties:
+`src/css/default.css` defines all CSS custom properties. `--css-var name=value` (repeatable, leading `--` optional) injects overrides into a `:root {}` block appended to the base stylesheet in a merged temp file (`style-overrides.css`). A browser ignores an override the stylesheet never reads, so after `resolveStylesheet` `md2pdf.ts` warns for every override name that no `var(` in the written effective stylesheet refers to (`findUnusedCssVars` in `src/steps/css-var-usage.ts`, #60). The check is textual and lenient: the name must match exactly and end there, override values count as users, a `var()` in a comment counts too, and a variable read only by a hoisted remote `@import` is reported although it may be used. It is a warning, not an error, because a custom stylesheet may define variables for later use. Key properties:
 
 md-to-pdf never references `--stylesheet` by path in the rendered page — it reads the file and injects its text into an inline `<style>` tag (puppeteer's `page.addStyleTag({ path })`), so any relative `@import` or `url()` in the base stylesheet would resolve against the page's own location (the `--basedir` HTTP server), not the stylesheet's directory on disk, regardless of where the merged file is written. `resolveStylesheet` (`src/steps/resolve-stylesheet.ts`) therefore makes the stylesheet fully self-contained before writing it out: local `@import` targets are inlined recursively (each resolved against its own file's directory, with diamond imports allowed and circular imports rejected), and local `url()` targets are rewritten to `data:` URIs. Remote (`http(s):`) references and existing `data:` URIs are left untouched. A missing local target aborts the run with its path.
 

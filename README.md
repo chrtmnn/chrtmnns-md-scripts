@@ -131,12 +131,12 @@ md2pdf --png README.md
 | `-R, --recursive`         | Also expand subfolders of folder arguments. Skips `node_modules`, `.git`, and folders starting with a dot. |
 | `--merge <name>`          | Combine all resolved Markdown files into one PDF with this base name. The `.pdf` suffix is optional.      |
 | `-s, --stylesheet <file>` | Stylesheet for the generated PDF: a path, or the name of a stylesheet in `~/.md2pdf` (see [Personal Stylesheets](#personal-stylesheets)). `-s default` always means the bundled `src/css/default.css`. Without the option, `~/.md2pdf/default.css` is used when it exists, otherwise the bundled stylesheet. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
-| `--css-var <name=value>`  | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. |
+| `--css-var <name=value>`  | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. A name the stylesheet never reads with `var()` produces a warning, which usually means a typo. |
 | `-o, --output-dir <dir>`  | Output directory for PDFs. Defaults to each Markdown file's directory, or to the common parent folder of all inputs with `--merge`. |
-| `-r, --temp-root <dir>`   | Root directory for temporary work dirs. Defaults to the system temp directory.                            |
-| `-p, --temp-in-output`    | Place the temporary work dir inside the output directory.                                                 |
+| `-r, --temp-root <dir>`   | Root directory for temporary work dirs. Defaults to the system temp directory. Cannot be combined with `-p`. |
+| `-p, --temp-in-output`    | Place the temporary work dir inside the output directory. Cannot be combined with `-r`.                   |
 | `-f, --force-doctoc`      | Create or refresh a TOC on the temporary conversion copy, even without source TOC markers.                |
-| `-u, --update-md-toc`     | Update an existing doctoc TOC in the original Markdown file. Does not create a new source TOC.            |
+| `-u, --update-md-toc`     | Update an existing doctoc TOC in the original Markdown file. Does not create a new source TOC; a file without a marker block gets a warning. Cannot be combined with `--merge`. |
 | `-k, --keep-temp`         | Keep the temporary work directory and print its path.                                                     |
 | `--verbose`               | Print output from doctoc, mermaid-cli, and md-to-pdf while they run.                                      |
 | `--debug`                 | Also write a standalone HTML file next to the PDF using the same stylesheet. An existing HTML file that md2pdf did not generate is never overwritten (see [Output Files](#output-files)). |
@@ -265,7 +265,7 @@ Only a marker block written on its own lines counts. Markers that merely appear 
 
 If the source Markdown does not yet contain the marker block, pass `-f` once to let doctoc create it on the temporary conversion copy. The newly created block is then placed directly before the first second-order (`##`) heading in the file, regardless of where doctoc itself would otherwise have inserted it.
 
-To also write the refreshed TOC back into the original Markdown file (instead of only into the temporary conversion copy), combine `-u` with an existing marker block.
+To also write the refreshed TOC back into the original Markdown file (instead of only into the temporary conversion copy), combine `-u` with an existing marker block. `-u` never adds a marker block to the source file: on a file without one it leaves the file unchanged and prints a warning. `-u` cannot be combined with `--merge`, because a merged run converts a temporary combined copy of the files, not the files themselves.
 
 ### Mermaid Diagram Syntax
 

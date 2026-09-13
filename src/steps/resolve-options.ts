@@ -52,6 +52,15 @@ export function collect(value: string, previous: string[]): string[] {
  */
 export function resolveOptions(program: Command): ConverterOptions {
   const rawOptions = program.opts<RawOptions>();
+
+  // A merged run converts a temporary concatenation, so `-u` would refresh
+  // that copy and leave every source file unchanged (#60).
+  if (rawOptions.updateMdToc && rawOptions.merge !== undefined) {
+    throw new Error(
+      '-u cannot be combined with --merge: a merged run converts a temporary concatenation of the files, so no source file would be updated.',
+    );
+  }
+
   // Relative values and bare names refer to the caller's directory, which the
   // global wrapper passes in because it runs pnpm from the repo root.
   const chosenStylesheet = chooseStylesheet(
