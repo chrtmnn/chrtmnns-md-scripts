@@ -84,15 +84,17 @@ The project is a CLI toolsuite for converting Markdown to PDF with Mermaid diagr
 
 `md2pdf` is the main entry point. After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / per-step spinner / `outro` UI. Each step is wrapped by a local `runStep(label, action)` helper that drives a spinner (or `log.info`/`log.success` when `--verbose` is set).
 
-Each step is a function that accepts a `ConversionContext` and **mutates it in place**. Steps return `void`, except `inlineAssets`, which returns the non-fatal warnings the caller surfaces via `log.warn`. Steps run in order; `cleanup` runs in a `finally` block unconditionally.
+Each per-file step is a function that accepts a `ConversionContext` and **mutates it in place**. These steps return `void`, except `inlineAssets`, which returns the non-fatal warnings the caller surfaces via `log.warn`. Steps run in order; `cleanup` runs in a `finally` block unconditionally.
 
-Before the per-file loop, `resolveInputs` (`src/steps/resolve-inputs.ts`) turns the raw positional arguments into the concrete list of Markdown files, and — when `--merge` is set — `mergeMarkdown` (`src/steps/merge-markdown.ts`) concatenates that list into one temporary Markdown file that the loop then runs over exactly once.
+Before the per-file loop, three steps run once for the whole run and have their own signatures rather than taking a `ConversionContext`: `resolveInputs` (`src/steps/resolve-inputs.ts`) turns the raw positional arguments into the concrete list of Markdown files and returns that list; when `--merge` is set, `mergeMarkdown` (`src/steps/merge-markdown.ts`) concatenates that list into one temporary Markdown file (returned alongside its temp dir) that the loop then runs over exactly once; and `resolveStylesheet` (`src/steps/resolve-stylesheet.ts`) resolves the effective CSS path once for the whole run, returning it so `md2pdf.ts` can assign it to `context.effectiveStylesheet` inside the loop.
 
 ```
-resolveInputs → [mergeMarkdown] → for each file:
+resolveInputs → [mergeMarkdown] → resolveStylesheet → for each file:
   prepareWorkdir → runDoctoc → extractTitle → renderMermaid
-    → createStylesheet → inlineAssets → renderPdf → copyOutput → cleanup
+    → inlineAssets → renderPdf → [renderHtml] → copyOutput → cleanup
 ```
+
+`renderHtml` only runs when `--debug` is set, emitting a standalone HTML file alongside the PDF.
 
 All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContext`, `CssVarOverride`) are in `src/types.ts`.
 
@@ -105,19 +107,19 @@ All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContex
 | `inputMarkdown` | `prepareWorkdir` (source path) / `runDoctoc` (temp copy) | Path fed to mermaid-cli |
 | `convertedMarkdown` | `prepareWorkdir` | Output of mermaid-cli, input to md-to-pdf |
 | `docTitle` | `extractTitle` | `--document-title` passed to md-to-pdf |
-| `effectiveStylesheet` | `createStylesheet` | Final CSS path (the base stylesheet as-is, or its self-contained copy with inlined references and overrides) |
-| `tempHtml` / `outputHtml` | `prepareWorkdir` | Debug HTML paths; populated by `renderHtml` and `copyOutput` only when `--debug` is set |
+| `effectiveStylesheet` | `resolveStylesheet` (assigned in `md2pdf.ts`, once per run) | Final CSS path (the base stylesheet as-is, or its self-contained copy with inlined references and overrides) |
+| `tempHtml` / `outputHtml` | `prepareWorkdir` | Debug HTML paths; always set, but the files at those paths are only written by `renderHtml` and `copyOutput` when `--debug` is set |
 
 ### Argument expansion (`src/steps/resolve-inputs.ts`)
 
-Positional arguments may be files or directories. A file positional is kept as-is (including non-existent paths, which are forwarded verbatim so `prepareWorkdir` keeps producing its `Skipped missing file` warning). A directory positional is replaced by the `*.md` files it contains, at the position the user gave it.
+Positional arguments may be files or directories. A file positional that does not exist is kept as-is and forwarded verbatim, so `prepareWorkdir` keeps producing its `Skipped missing file` warning; one that exists is resolved to an absolute path via `path.resolve`. A directory positional is replaced by the `*.md` files it contains (already absolute), at the position the user gave it.
 
 - Extension matching is case-insensitive (`.md`, `.MD`); `.markdown` is deliberately **not** matched.
 - Ordering uses plain `<`/`>` on the raw file names (UTF-16 code-unit order) rather than `localeCompare`, so it cannot shift with the machine's locale or ICU build. Note that this sorts uppercase before lowercase, e.g. `README.MD` before `readme.md`.
 - `-R, --recursive` descends into subdirectories: a directory's own files first (sorted), then its subdirectories (sorted), each recursively. `-R` without a directory positional is a no-op.
 - Directories named in `SKIPPED_DIRECTORY_NAMES` (`node_modules`, `.git`) and any directory whose name starts with `.` are never descended into. They can still be expanded when passed explicitly as a positional.
 - Symlink loops are avoided by never following directory symlinks: recursion only descends into entries where `Dirent.isDirectory()` is true, which is false for symlinks and Windows junctions. No visited-realpath bookkeeping is needed because a cycle can only be formed through a link. Symlinked `.md` *files* are still collected (verified with an extra `statSync`).
-- The final list is deduplicated by resolved absolute path (case-insensitively on Windows), keeping the first occurrence, so passing both a folder and a file inside it converts that file once.
+- The final list is deduplicated by `path.resolve`d path (case-insensitively on Windows), keeping the first occurrence, so passing both a folder and a file inside it converts that file once. This is `path.resolve`, not `fs.realpathSync`, so a symlink and its target both dedupe to the same key even though they are not the same file on disk (see #49 for where that falls short).
 - An empty directory produces a warning, not a failure.
 
 ### Merging (`src/steps/merge-markdown.ts`)
@@ -125,7 +127,7 @@ Positional arguments may be files or directories. A file positional is kept as-i
 `--merge <name>` combines every resolved Markdown file into a single PDF. No PDF-merging library is involved and no dependency was added: the Markdown is concatenated **before** rendering and the existing pipeline then runs once over the concatenated file, so every other flag keeps working unchanged and `--force-doctoc` produces one table of contents spanning all documents.
 
 - Documents are separated by a `<div class="document-break"></div>` block with blank lines on both sides, so a file without a trailing newline cannot glue its last line onto the next document. The matching `.document-break` rule is in `src/css/default.css`, driven by the `--document-page-break-before` / `--document-break-before` custom properties. Headings cannot be used for the break because they default to `break-before: auto`.
-- The merged file is written into a temp directory named after `--merge`, so `prepareWorkdir` derives the PDF name, the temp file names, and the document title from it. The document title is therefore the `--merge` name; `extractTitle` is skipped for merged runs.
+- The merged file is written as `<merge-name>.md` inside a randomly-named `merge_XXXXXX` temp directory (`fs.mkdtempSync`), so `prepareWorkdir` derives the PDF name, the temp file names, and the document title from the *file's* name. The document title is therefore the `--merge` name; `extractTitle` is skipped for merged runs.
 - The target directory is `-o` when given, otherwise the common ancestor directory of the resolved inputs. `md2pdf.ts` pins it by passing `{ ...options, outputDir: targetDir }` into `prepareWorkdir`, because the merged file itself lives in a temp directory.
 - The merge temp directory follows the same `-r` / `-p` placement rules as the conversion work directory and is removed unless `-k` is set.
 - Relative **image** targets are rewritten to absolute paths as each document is read, against that document's own directory. Concatenation is the last point at which a section's origin is still known, and `inlineAssets` embeds those absolute paths afterwards. Two documents in different directories can therefore both use `images/logo.png` and each still gets its own file.
@@ -153,10 +155,10 @@ This is a documented heuristic, not a CommonMark parser. Backslash-escaped hashe
 
 ### Temp directory strategy
 
-Each conversion creates an isolated temp directory via `fs.mkdtempSync(path.join(base, `${stem}_`))` (`stem_` followed by 6 random characters chosen by Node, e.g. `stem_aB3xQ9`). `mkdtempSync` creates the directory atomically, so a name collision fails loudly instead of two runs silently sharing a directory. Location:
-- Default: OS temp dir
-- `-r <root>`: custom root directory
+Each conversion creates an isolated temp directory via `fs.mkdtempSync(path.join(base, `${stem}_`))` (`stem_` followed by 6 random characters chosen by Node, e.g. `stem_aB3xQ9`). `mkdtempSync` creates the directory atomically, so a name collision fails loudly instead of two runs silently sharing a directory. Location, in order of precedence (`-p` wins over `-r` when both are given; `merge-markdown.ts` follows the same order for the merge temp directory):
 - `-p`: inside the output directory (or source dir if `-o` is absent)
+- `-r <root>`: custom root directory
+- Default: OS temp dir
 
 The `-k` flag preserves the temp dir for debugging.
 
@@ -170,7 +172,7 @@ Because the renderer only sees the work directory, a relative image reference in
 
 - Only **image** targets are rewritten: Markdown `![alt](target)` and HTML `<img src>`. Links are never fetched during rendering and are left alone.
 - Fenced code blocks and inline code spans are skipped, so documentation that *shows* image syntax survives intact. Reference-style images (`![alt][ref]`) are not handled, because a link reference definition is shared between links and images.
-- Targets that already resolve inside the work directory are left untouched. This is what keeps the Mermaid SVGs working.
+- A target is left untouched when it resolves, relative to the work directory, to an existing file there — there is no check that the resolved path stays *inside* the work directory, so a `../`-prefixed target can escape it and would still be left untouched. In practice this is what keeps the Mermaid SVGs working.
 - URLs (`https://`, `data:`, protocol-relative) are left untouched. Windows drive letters are not mistaken for URL schemes because a scheme must be at least two characters.
 - Single-file runs resolve relative targets against `context.sourceDir`. Merged runs resolve them per source document inside `mergeMarkdown` (see below), so by the time this step runs they are already absolute.
 - A target that does not resolve to an existing file, or an asset larger than `MAX_INLINE_BYTES` (32 MiB), is reported as a warning and left as written.
@@ -225,7 +227,7 @@ An inlined `@import` keeps its conditions as wrapping blocks, nested in grammar 
 
 The composition rules are in `css-import-conditions.ts` next to the tail parsing: layer names nest with `.`, `supports()` conditions combine as `(A) and (B)`, and media query lists combine as a cross product (`print, screen` inside `(min-width: 10cm)` → `print and (min-width: 10cm), screen and (min-width: 10cm)`, with the media type leading each rendered query because CSS requires that). A pair that cannot hold at once is dropped from the cross product rather than failing it, so `print` inside `print, screen` composes to `print`; `all` adds no constraint and leaves the other side as written. A negated feature query is parenthesised on the way out (`screen and (not (hover))`), because a bare `not (…)` may not be followed by a further `and`.
 
-Where no faithful composition exists the run aborts with the importing file named rather than emit an `@import` that would be dropped again: an anonymous `layer` has no name to nest with another layer, two different media *types* cannot both hold, a query whose own `not` / `only` negates a media type cannot be narrowed by `and`, and a media query list that contributes nothing would silently *widen* the condition. A single set of conditions is passed through verbatim, so a lone anonymous `layer` or `not print` survives untouched.
+Where no faithful composition exists the run aborts with the importing file named rather than emit an `@import` that would be dropped again: an anonymous `layer` has no name to nest with another layer, two different media *types* cannot both hold, a query starting with `not` / `only` cannot be narrowed by `and` regardless of what it negates (`parseMediaQuery` rejects any such query, not only ones that negate a media type — e.g. `not (hover)` aborts too), and a media query list that contributes nothing would silently *widen* the condition. A single set of conditions is passed through verbatim, so a lone anonymous `layer` or `not print` survives untouched.
 
 Two consequences worth knowing:
 
@@ -243,9 +245,10 @@ Two pre-existing gaps that the hoisting does **not** close, because the `@import
 | `--heading-page-break-before` | `auto` | Page break before h1/h2 |
 | `--heading-break-before` | `auto` | Same, modern syntax |
 | `--first-heading-page-break-before` | `auto` | Suppresses break before the first h1/h2 |
+| `--first-heading-break-before` | `auto` | Same, modern syntax |
 | `--font-text` | `"Aptos"` | Body font |
-| `--font-code` | `"JetBrains Mono"` | Code font |
-| `--page-margin-top` / `-right` / `-bottom` / `-left` | `2cm` / `2cm` / `2cm` / `2.5cm` | Individual page margins (A4) |
+| `--font-code` | `"JetBrains Mono", "Fira Code"` | Code font |
+| `--page-margin-top` / `-right` / `-bottom` / `-left` | `1.6cm` / `1.6cm` / `1.6cm` / `2.4cm` | Individual page margins (A4) |
 | `--page-margin` | composed from the four individual margins | Shorthand to set all four margins at once |
 | `--page-size` | `A4` | `@page` size, e.g. `A5`, `letter`, `A4 landscape` |
 | `--document-page-break-before` | `always` | Page break before each document combined with `--merge` |
