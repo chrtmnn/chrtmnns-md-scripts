@@ -14,6 +14,7 @@ import {
   joinDocuments,
   removeFrontmatter,
 } from '../steps/merge-assembly';
+import { POSIX_PATH_RULES, WINDOWS_PATH_RULES } from '../steps/path-rules';
 
 /**
  * Builds an absolute path from segments in a platform-correct way, so the same
@@ -46,27 +47,43 @@ test('commonAncestorDirectory is that file own directory for a single input', ()
   assert.equal(commonAncestorDirectory([absolute('docs', 'only.md')]), absolute('docs'));
 });
 
-test('commonAncestorDirectory compares segments case-insensitively on Windows', () => {
-  const files = [absolute('Docs', 'a.md'), absolute('docs', 'b.md')];
-  const ancestor = commonAncestorDirectory(files);
-
-  if (process.platform === 'win32') {
-    assert.equal(ancestor.toLowerCase(), absolute('docs').toLowerCase());
-  } else {
-    // Case-sensitive filesystem: the two directories share only the root.
-    assert.equal(ancestor, path.sep);
-  }
+test('commonAncestorDirectory compares segments case-insensitively under Windows rules (#50)', () => {
+  assert.equal(
+    commonAncestorDirectory(['C:\\Docs\\a.md', 'C:\\docs\\b.md'], WINDOWS_PATH_RULES).toLowerCase(),
+    'c:\\docs',
+  );
 });
 
-test('commonAncestorDirectory falls back to the working directory across drives', (t) => {
-  if (process.platform !== 'win32') {
-    t.skip('only Windows paths can lack a common root');
-    return;
-  }
+test('commonAncestorDirectory compares segments case-sensitively under POSIX rules (#50)', () => {
+  assert.equal(commonAncestorDirectory(['/Docs/a.md', '/docs/b.md'], POSIX_PATH_RULES), '/');
+});
 
-  const files = ['C:\\docs\\a.md', 'D:\\docs\\b.md'];
+test('commonAncestorDirectory falls back to the working directory across drives (#50)', () => {
+  assert.equal(commonAncestorDirectory(['C:\\docs\\a.md', 'D:\\docs\\b.md'], WINDOWS_PATH_RULES), process.cwd());
+});
 
-  assert.equal(commonAncestorDirectory(files), process.cwd());
+test('commonAncestorDirectory returns an absolute path at the drive root (#50)', () => {
+  // `C:` alone is drive-*relative*: path.win32.resolve('C:') is the current
+  // directory of drive C:, so the merged PDF landed in the working directory.
+  assert.equal(commonAncestorDirectory(['C:\\a\\x.md', 'C:\\b\\y.md'], WINDOWS_PATH_RULES), 'C:\\');
+  assert.equal(commonAncestorDirectory(['C:\\x.md', 'C:\\a\\y.md'], WINDOWS_PATH_RULES), 'C:\\');
+  assert.equal(commonAncestorDirectory(['C:\\x.md', 'C:\\y.md'], WINDOWS_PATH_RULES), 'C:\\');
+});
+
+test('commonAncestorDirectory keeps a UNC share and rejects a bare server (#50)', () => {
+  assert.equal(
+    commonAncestorDirectory(['\\\\srv\\share\\a\\x.md', '\\\\srv\\share\\b\\y.md'], WINDOWS_PATH_RULES),
+    '\\\\srv\\share',
+  );
+  assert.equal(
+    commonAncestorDirectory(['\\\\srv\\one\\x.md', '\\\\srv\\two\\y.md'], WINDOWS_PATH_RULES),
+    process.cwd(),
+    'a server without a share is no directory',
+  );
+});
+
+test('commonAncestorDirectory returns the POSIX root when only it is shared (#50)', () => {
+  assert.equal(commonAncestorDirectory(['/a/x.md', '/b/y.md'], POSIX_PATH_RULES), '/');
 });
 
 test('joinDocuments separates documents with a blank-line-wrapped break block', () => {

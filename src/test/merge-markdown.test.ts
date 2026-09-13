@@ -14,6 +14,7 @@ import test, { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { DOCUMENT_BREAK_HTML } from '../steps/merge-assembly';
 import { MergedInput, mergeMarkdown } from '../steps/merge-markdown';
+import { NATIVE_PATH_RULES, POSIX_PATH_RULES, PathRules, WINDOWS_PATH_RULES } from '../steps/path-rules';
 import { ConverterOptions } from '../types';
 import { comparablePath, makeOptions, removeAfter, tempDir, writePng, writeFile } from './helpers';
 
@@ -25,8 +26,13 @@ import { comparablePath, makeOptions, removeAfter, tempDir, writePng, writeFile 
  * test, so every run used to leave a `merge_*` directory behind. Registering
  * the result keeps the default placement under test.
  */
-function merge(t: TestContext, files: string[], options: ConverterOptions): MergedInput {
-  const result = mergeMarkdown(files, options);
+function merge(
+  t: TestContext,
+  files: string[],
+  options: ConverterOptions,
+  rules: PathRules = NATIVE_PATH_RULES,
+): MergedInput {
+  const result = mergeMarkdown(files, options, rules);
   removeAfter(t, result.mergeDir);
   return result;
 }
@@ -226,4 +232,26 @@ test('a document holding nothing but frontmatter contributes no section (#49)', 
   );
 
   assert.equal(merged, `# A\n\n${DOCUMENT_BREAK_HTML}\n\n# C\n`);
+});
+
+test('the multi-directory warning compares directories per the platform rules (#50)', (t) => {
+  const dir = tempDir(t);
+  const a = writeFile(dir, 'One/a.md', '# A\n');
+  const b = writeFile(dir, 'one/b.md', '# B\n');
+
+  if (comparablePath(path.dirname(a)) === comparablePath(path.dirname(b))) {
+    t.skip('the filesystem folded the two directories into one');
+    return;
+  }
+
+  assert.deepEqual(
+    merge(t, [a, b], makeOptions({ merge: 'combined' }), WINDOWS_PATH_RULES).warnings,
+    [],
+    'Windows rules see one directory spelled two ways',
+  );
+  assert.equal(
+    merge(t, [a, b], makeOptions({ merge: 'combined' }), POSIX_PATH_RULES).warnings.length,
+    1,
+    'POSIX rules see two directories',
+  );
 });

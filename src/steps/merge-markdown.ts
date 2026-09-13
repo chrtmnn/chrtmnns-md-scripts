@@ -4,6 +4,7 @@ import path from 'path';
 import { ConverterOptions } from '../types';
 import { absolutizeImageTargets } from './inline-assets';
 import { commonAncestorDirectory, joinDocuments, removeFrontmatter } from './merge-assembly';
+import { NATIVE_PATH_RULES, PathRules, comparisonKey } from './path-rules';
 import { stripBom } from './markdown-scan';
 
 /**
@@ -97,9 +98,14 @@ function readDocument(file: string, isFirst: boolean): { body: string; droppedFr
  *
  * @param files - Resolved input paths, in conversion order.
  * @param options - Resolved converter options; `options.merge` supplies the output base name.
+ * @param rules - Path rules for the ancestor and directory comparisons; the running platform's by default.
  * @returns The merged file, its temp directory, the default target directory, and any warnings.
  */
-export function mergeMarkdown(files: string[], options: ConverterOptions): MergedInput {
+export function mergeMarkdown(
+  files: string[],
+  options: ConverterOptions,
+  rules: PathRules = NATIVE_PATH_RULES,
+): MergedInput {
   if (!options.merge) {
     throw new Error('mergeMarkdown called without --merge.');
   }
@@ -120,13 +126,12 @@ export function mergeMarkdown(files: string[], options: ConverterOptions): Merge
   }
 
   const warnings: string[] = [];
-  const ancestor = commonAncestorDirectory(existing);
+  const ancestor = commonAncestorDirectory(existing, rules);
   const targetDir = options.outputDir ? path.resolve(options.outputDir) : ancestor;
 
   const distinctDirectories = new Set(
     existing.map((file) => {
-      const directory = path.dirname(file);
-      return process.platform === 'win32' ? directory.toLowerCase() : directory;
+      return comparisonKey(path.dirname(file), rules);
     }),
   );
 

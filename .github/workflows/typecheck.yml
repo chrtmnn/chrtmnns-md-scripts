@@ -24,7 +24,13 @@ jobs:
       - run: pnpm typecheck
 
   test:
-    runs-on: ubuntu-latest
+    # Windows is the primary target of this tool, and the junction and
+    # `npx.cmd` guarantees can only be verified there (#50).
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 

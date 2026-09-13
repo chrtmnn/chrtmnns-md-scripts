@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ConverterOptions } from '../types';
+import { NATIVE_PATH_RULES, PathRules, comparisonKey } from './path-rules';
 
 /**
  * File extension recognised as Markdown during directory expansion.
@@ -171,9 +172,14 @@ function collectFromDirectory(dir: string, recursive: boolean, collected: string
  *
  * @param positionals - Raw positional arguments as received from Commander.
  * @param options - Resolved converter options carrying the `--recursive` flag.
+ * @param rules - Path rules for the deduplication; the running platform's by default.
  * @returns The resolved Markdown file list plus any non-fatal warnings.
  */
-export function resolveInputs(positionals: string[], options: ConverterOptions): ResolvedInputs {
+export function resolveInputs(
+  positionals: string[],
+  options: ConverterOptions,
+  rules: PathRules = NATIVE_PATH_RULES,
+): ResolvedInputs {
   const files: string[] = [];
   const rejected: string[] = [];
   const warnings: string[] = [];
@@ -196,7 +202,7 @@ export function resolveInputs(positionals: string[], options: ConverterOptions):
       resolved = path.resolve(candidate);
     }
 
-    const key = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    const key = comparisonKey(resolved, rules);
     if (seen.has(key)) {
       return;
     }

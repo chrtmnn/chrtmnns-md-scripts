@@ -8,6 +8,7 @@
 
 import path from 'path';
 import { findFrontmatterEnd } from './markdown-scan';
+import { NATIVE_PATH_RULES, PathRules, comparisonKey } from './path-rules';
 
 /**
  * Separator inserted between two consecutive source documents in a merged
@@ -28,25 +29,34 @@ export const DOCUMENT_BREAK_HTML = '<div class="document-break"></div>';
  * @param b - Second path segment or path.
  * @returns `true` when both refer to the same name.
  */
-function pathPartsEqual(a: string, b: string): boolean {
-  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+function pathPartsEqual(a: string, b: string, rules: PathRules): boolean {
+  return comparisonKey(a, rules) === comparisonKey(b, rules);
 }
 
 /**
  * Computes the longest common directory prefix of two absolute directories.
  *
+ * The result must be an *absolute* path, which the plain join is not at two
+ * roots: `''` is the POSIX root, and `C:` is a **drive-relative** path on
+ * Windows that `path.win32.resolve` turns into the current directory of drive
+ * C:. `C:\a\x.md` and `C:\b\y.md` therefore used to merge into the working
+ * directory instead of `C:\` (#50). An incomplete UNC prefix (`\\server`
+ * without a share) is no directory at all and counts as no common root.
+ *
  * @param a - First absolute directory.
  * @param b - Second absolute directory.
+ * @param rules - Path rules to apply.
  * @returns The common prefix directory, or `undefined` when the paths share
  *   no root (different Windows drives, for example).
  */
-function commonPrefixDirectory(a: string, b: string): string | undefined {
-  const aSegments = a.split(path.sep);
-  const bSegments = b.split(path.sep);
+function commonPrefixDirectory(a: string, b: string, rules: PathRules): string | undefined {
+  const { sep } = rules.path;
+  const aSegments = a.split(sep);
+  const bSegments = b.split(sep);
   const shared: string[] = [];
 
   for (let i = 0; i < Math.min(aSegments.length, bSegments.length); i++) {
-    if (!pathPartsEqual(aSegments[i], bSegments[i])) {
+    if (!pathPartsEqual(aSegments[i], bSegments[i], rules)) {
       break;
     }
     shared.push(aSegments[i]);
@@ -56,8 +66,20 @@ function commonPrefixDirectory(a: string, b: string): string | undefined {
     return undefined;
   }
 
-  const joined = shared.join(path.sep);
-  return joined === '' ? path.sep : joined;
+  const joined = shared.join(sep);
+
+  if (joined === '') {
+    return sep;
+  }
+  if (/^[A-Za-z]:$/.test(joined)) {
+    return joined + sep;
+  }
+  // `['', '', server]` or less: a UNC path needs both a server and a share.
+  if (shared[0] === '' && shared[1] === '' && shared.length < 4) {
+    return undefined;
+  }
+
+  return joined;
 }
 
 /**
@@ -65,15 +87,16 @@ function commonPrefixDirectory(a: string, b: string): string | undefined {
  * directory that contains every input file.
  *
  * @param files - Absolute paths of the merged source files.
+ * @param rules - Path rules to apply; the running platform's by default.
  * @returns The common ancestor directory, falling back to the current
  *   working directory when the inputs share no common root.
  */
-export function commonAncestorDirectory(files: string[]): string {
-  const directories = files.map((file) => path.dirname(path.resolve(file)));
+export function commonAncestorDirectory(files: string[], rules: PathRules = NATIVE_PATH_RULES): string {
+  const directories = files.map((file) => rules.path.dirname(rules.path.resolve(file)));
   let common = directories[0];
 
   for (const directory of directories.slice(1)) {
-    const next = commonPrefixDirectory(common, directory);
+    const next = commonPrefixDirectory(common, directory, rules);
     if (!next) {
       return process.cwd();
     }

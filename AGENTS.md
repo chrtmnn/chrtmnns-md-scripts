@@ -56,6 +56,8 @@ directory in `os.tmpdir()` unless `-r`/`-p` says otherwise, and the pipeline's
 own cleanup never runs in a unit test, so the test registers what the step
 created instead of side-stepping the default placement.
 
+Platform rules are passed in, not read from `process.platform` (#50): `commonAncestorDirectory`, `resolveInputs` and `mergeMarkdown` take an optional `PathRules` (`path.win32`/`path.posix` plus a `caseInsensitive` flag) that defaults to `NATIVE_PATH_RULES`. Both platform paths therefore run on any runner instead of leaving the Windows branch untested on Linux CI, and `pnpm test` runs on a `ubuntu-latest` + `windows-latest` matrix on top of that.
+
 Scope: the pure logic only. Steps that shell out through `runNpx` (doctoc,
 mermaid-cli, md-to-pdf) are not covered — the tests must stay fast and must not
 need the network or Chromium. Tests that need a symbolic link skip themselves
@@ -70,6 +72,9 @@ tested modules only.
 **Convention for testable helpers**: pure logic that deserves tests moves into
 its own module rather than being `export`ed out of a file that also does I/O.
 `markdown-scan.ts` (scanning primitives, out of `run-doctoc.ts`),
+`path-rules.ts` (the Windows/POSIX path semantics the steps used to read off
+`process.platform`, out of `merge-assembly.ts`, `resolve-inputs.ts` and
+`merge-markdown.ts`),
 `toc-placement.ts` (TOC relocation rules, out of `run-doctoc.ts`),
 `doctoc-markers.ts` (genuine-marker detection, masking and the `-u` write-back
 check, out of `run-doctoc.ts`),
@@ -149,7 +154,7 @@ Three guards keep a run from destroying files it did not mean to replace (#45):
 
 - Documents are separated by a `<div class="document-break"></div>` block with blank lines on both sides, so a file without a trailing newline cannot glue its last line onto the next document. A document with no content left — an empty file, or one holding only frontmatter — contributes no section and therefore no break, which used to produce two consecutive breaks and a blank page (#49). The matching `.document-break` rule is in `src/css/default.css`, driven by the `--document-page-break-before` / `--document-break-before` custom properties. Headings cannot be used for the break because they default to `break-before: auto`.
 - The merged file is written as `<merge-name>.md` inside a randomly-named `merge_XXXXXX` temp directory (`fs.mkdtempSync`), so `prepareWorkdir` derives the PDF name, the temp file names, and the document title from the *file's* name. The document title is therefore the `--merge` name; `extractTitle` is skipped for merged runs.
-- The target directory is `-o` when given, otherwise the common ancestor directory of the resolved inputs. `md2pdf.ts` pins it by passing `{ ...options, outputDir: targetDir }` into `prepareWorkdir`, because the merged file itself lives in a temp directory.
+- The target directory is `-o` when given, otherwise the common ancestor directory of the resolved inputs. That computation returns an *absolute* path at every root: `''` becomes the POSIX root and a bare `C:` becomes `C:\`, since `C:` alone is drive-*relative* and would have put the merged PDF into the working directory (#50). A UNC prefix without a share (`\\server`) counts as no common root. `md2pdf.ts` pins it by passing `{ ...options, outputDir: targetDir }` into `prepareWorkdir`, because the merged file itself lives in a temp directory.
 - The merge temp directory follows the same `-r` / `-p` placement rules as the conversion work directory and is removed unless `-k` is set.
 - YAML frontmatter is kept only on the **first** document (#49). md-to-pdf parses a block only at the start of the file, so in any later document the same block is ordinary content and renders as a horizontal rule plus an invented heading carrying the raw YAML, which `--force-doctoc` then lists in the table of contents. Each dropped block is counted and reported in one warning.
 - Relative **image** targets are rewritten to absolute paths as each document is read, against that document's own directory. Concatenation is the last point at which a section's origin is still known, and `inlineAssets` embeds those absolute paths afterwards. Two documents in different directories can therefore both use `images/logo.png` and each still gets its own file.
