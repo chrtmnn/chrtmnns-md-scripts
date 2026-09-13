@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { ConversionContext } from '../types';
-import { findFrontmatterEnd, findFirstHeading } from './markdown-scan';
+import { findFrontmatterEnd, findFirstHeading, stripBom } from './markdown-scan';
 
 /**
  * Extracts the title from the first Markdown heading and stores it as the
@@ -23,12 +23,19 @@ import { findFrontmatterEnd, findFirstHeading } from './markdown-scan';
  * encountered while scanning top to bottom wins, whether it is ATX or
  * setext.
  *
- * Leaves the existing fallback title unchanged when no heading is present.
+ * Leaves the existing fallback title unchanged when no heading is present —
+ * and when the first heading carries no text (`#`, `## #`), which renders as
+ * an empty heading and would otherwise blank out the title (#48).
+ *
+ * A leading UTF-8 BOM is stripped before the scan. It would otherwise hide
+ * both the `---` of a frontmatter block and a `#` on line 1, which together
+ * turned a `title:` key into a setext heading and put the raw YAML into the
+ * PDF metadata (#48).
  *
  * @param context - Mutable conversion state for the current source file.
  */
 export function extractTitle(context: ConversionContext): void {
-  const raw = fs.readFileSync(context.inputMarkdown, 'utf8');
+  const raw = stripBom(fs.readFileSync(context.inputMarkdown, 'utf8'));
   const lines = raw.split(/\r\n|\n/);
 
   const frontmatterEnd = findFrontmatterEnd(lines);
@@ -36,7 +43,9 @@ export function extractTitle(context: ConversionContext): void {
 
   const heading = findFirstHeading(lines.slice(searchStart));
 
-  if (heading) {
-    context.docTitle = heading.text.trim();
+  const title = heading?.text.trim();
+
+  if (title) {
+    context.docTitle = title;
   }
 }

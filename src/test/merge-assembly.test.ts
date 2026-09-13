@@ -1,18 +1,14 @@
 /**
- * Behaviour of the pure parts of `--merge` (#6): BOM stripping, the common
- * ancestor directory the merged PDF defaults to, and how document bodies are
- * glued together.
+ * Behaviour of the pure parts of `--merge` (#6): the common ancestor
+ * directory the merged PDF defaults to, and how document bodies are glued
+ * together. BOM stripping moved to `markdown-scan.test.ts` with the function
+ * itself (#48).
  */
 
 import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  DOCUMENT_BREAK_HTML,
-  commonAncestorDirectory,
-  joinDocuments,
-  stripBom,
-} from '../steps/merge-assembly';
+import { DOCUMENT_BREAK_HTML, commonAncestorDirectory, joinDocuments } from '../steps/merge-assembly';
 
 /**
  * Builds an absolute path from segments in a platform-correct way, so the same
@@ -24,13 +20,6 @@ import {
 function absolute(...segments: string[]): string {
   return path.join(path.parse(process.cwd()).root, ...segments);
 }
-
-test('stripBom removes only a leading BOM', () => {
-  assert.equal(stripBom('\uFEFF# Title'), '# Title');
-  assert.equal(stripBom('# Title'), '# Title');
-  assert.equal(stripBom('# Title\uFEFF'), '# Title\uFEFF');
-  assert.equal(stripBom(''), '');
-});
 
 test('commonAncestorDirectory returns the shared directory of the inputs', () => {
   const files = [absolute('docs', 'a.md'), absolute('docs', 'b.md')];

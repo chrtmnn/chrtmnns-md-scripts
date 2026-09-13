@@ -21,20 +21,6 @@ import path from 'path';
 export const DOCUMENT_BREAK_HTML = '<div class="document-break"></div>';
 
 /**
- * Removes a leading UTF-8 byte order mark.
- *
- * Only the first document of a merged file could legitimately keep one, and
- * a stray BOM in the middle of the concatenated Markdown would be rendered
- * as a zero-width character, so every document is stripped.
- *
- * @param value - Raw file contents.
- * @returns The contents without a leading BOM code point.
- */
-export function stripBom(value: string): string {
-  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
-}
-
-/**
  * Compares two directory paths for equality, case-insensitively on Windows.
  *
  * @param a - First path segment or path.

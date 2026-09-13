@@ -170,3 +170,19 @@ test('handles a TOC block that doctoc placed inside the frontmatter region', () 
 
   assert.equal(output, doc(['---', 'title: Doc', '---', '', 'Intro.', '', ...TOC_BLOCK, '', '## Second']));
 });
+
+test('a leading BOM neither hides the frontmatter nor is lost (#48)', () => {
+  const body = doc(['---', 'title: Doc', '---', '', ...TOC_BLOCK, '', 'Intro.', '', '## Second']);
+  const expected = doc(['---', 'title: Doc', '---', '', 'Intro.', '', ...TOC_BLOCK, '', '## Second']);
+
+  const output = relocateTocBeforeFirstH2(`﻿${body}`);
+
+  assert.equal(output, `﻿${expected}`);
+});
+
+test('a leading BOM does not hide a setext h2 from the placement scan (#48)', () => {
+  const body = doc(['Title', '=====', '', ...TOC_BLOCK, '', 'Intro.', '', 'Second', '------']);
+  const expected = doc(['Title', '=====', '', 'Intro.', '', ...TOC_BLOCK, '', 'Second', '------']);
+
+  assert.equal(relocateTocBeforeFirstH2(`﻿${body}`), `﻿${expected}`);
+});

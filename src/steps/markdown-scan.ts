@@ -12,6 +12,25 @@
  * genuine doctoc marker comment from a documented example (#44).
  */
 
+/** Byte order mark, the one character every scan has to look past. */
+export const BOM = '\uFEFF';
+
+/**
+ * Removes a leading UTF-8 byte order mark.
+ *
+ * Windows tooling (Notepad, `Out-File`, `Set-Content`) writes UTF-8 with a
+ * BOM by default, and the BOM sits *before* the first character of the first
+ * line: it hides a `---` frontmatter delimiter, a `#` heading and a doctoc
+ * marker from every line-oriented scan in this module. Every scanner that
+ * looks at line 1 therefore strips it first (#48).
+ *
+ * @param value - Raw file contents.
+ * @returns The contents without a leading BOM code point.
+ */
+export function stripBom(value: string): string {
+  return value.startsWith(BOM) ? value.slice(BOM.length) : value;
+}
+
 /**
  * Line-ending-preserving check for a blank (whitespace-only) line.
  *

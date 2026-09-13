@@ -3,7 +3,8 @@ import os from 'os';
 import path from 'path';
 import { ConverterOptions } from '../types';
 import { absolutizeImageTargets } from './inline-assets';
-import { commonAncestorDirectory, joinDocuments, stripBom } from './merge-assembly';
+import { commonAncestorDirectory, joinDocuments } from './merge-assembly';
+import { stripBom } from './markdown-scan';
 
 /**
  * Result of assembling the merged Markdown file.

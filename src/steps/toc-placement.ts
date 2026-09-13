@@ -7,7 +7,7 @@
  * rules.
  */
 
-import { isBlank, findFirstH2Index, findFrontmatterEnd } from './markdown-scan';
+import { BOM, findFirstH2Index, findFrontmatterEnd, isBlank } from './markdown-scan';
 
 /** Opening marker of a doctoc-generated table of contents block. */
 export const DOCTOC_MARKER = '<!-- START doctoc generated TOC';
@@ -104,6 +104,21 @@ function insertBlockBeforeIndex(lines: string[], block: string[], h2Idx: number)
  * @returns The document with the TOC block relocated, or `raw` unchanged.
  */
 export function relocateTocBeforeFirstH2(raw: string): string {
+  // A BOM sits before the first character of line 1, where it would hide a
+  // frontmatter delimiter or a setext heading from the scan below. It is
+  // detached for the duration and put back verbatim, so a document that
+  // carries one keeps it (#48).
+  const bom = raw.startsWith(BOM) ? BOM : '';
+  return bom + relocateInBody(bom ? raw.slice(BOM.length) : raw);
+}
+
+/**
+ * The relocation itself, on a document guaranteed to start without a BOM.
+ *
+ * @param raw - Document contents without a leading BOM.
+ * @returns The document with the TOC block relocated, or `raw` unchanged.
+ */
+function relocateInBody(raw: string): string {
   const eol = raw.includes('\r\n') ? '\r\n' : '\n';
   const hadTrailingNewline = raw.endsWith('\n');
 
