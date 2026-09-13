@@ -69,7 +69,19 @@ test('parseMergeName rejects empty and dot-only names', () => {
 });
 
 test('parseMergeName rejects anything that looks like a path', () => {
-  for (const value of ['out/report', 'out\\report', 'C:report', 'a?b', 'a*b', 'a|b', 'a"b', '<a>']) {
+  for (const value of ['out/report', 'out\\report', 'C:report']) {
     assert.throws(() => parseMergeName(value), /without path separators/, `expected ${value} to be rejected`);
+  }
+});
+
+test('parseMergeName rejects characters that are illegal in a file name', () => {
+  // These carry no path separator, so the message must not claim one: the
+  // wording is what the user reads when the name is refused.
+  for (const value of ['a?b', 'a*b', 'a|b', 'a"b', '<a>']) {
+    assert.throws(
+      () => parseMergeName(value),
+      /without the characters/,
+      `expected ${value} to be rejected`,
+    );
   }
 });

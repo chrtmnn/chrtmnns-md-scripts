@@ -12,7 +12,7 @@ import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareWorkdir } from '../steps/prepare-workdir';
-import { comparablePath, makeOptions, tempDir, writeFile } from './helpers';
+import { comparablePath, makeOptions, removeAfter, tempDir, writeFile } from './helpers';
 
 test('returns undefined for a missing source file', (t) => {
   const dir = tempDir(t);
@@ -24,7 +24,11 @@ test('derives every context path from the source file', (t) => {
   const dir = tempDir(t);
   const file = writeFile(dir, 'My Report.md', '# Doc\n');
 
+  // No -r/-p, so the work directory lands in os.tmpdir(): the default
+  // placement stays under test, and the directory is removed afterwards
+  // instead of piling up one `My Report_*` per run.
   const context = prepareWorkdir(file, makeOptions())!;
+  removeAfter(t, context.workdir);
 
   assert.equal(context.baseName, 'My Report.md');
   assert.equal(context.stem, 'My Report');
@@ -75,6 +79,7 @@ test('creates the target directory so later steps can write into it', (t) => {
   const out = path.join(dir, 'deep', 'output');
 
   const context = prepareWorkdir(file, makeOptions({ outputDir: out }))!;
+  removeAfter(t, context.workdir);
 
   assert.equal(fs.statSync(context.targetDir).isDirectory(), true);
 });

@@ -34,6 +34,29 @@ export function tempDir(t: TestContext, prefix = 'md-scripts-test-'): string {
 }
 
 /**
+ * Registers a directory the production code created for removal when the test
+ * ends.
+ *
+ * Steps that place their temp directory outside the fixture (the default
+ * placement of `prepareWorkdir` and `mergeMarkdown` is `os.tmpdir()`) would
+ * otherwise leave it behind: nothing in the test owns it, and the pipeline's
+ * own cleanup never runs in a unit test. Registering the directory keeps the
+ * default-placement path genuinely exercised instead of side-stepping it with
+ * `-r`/`-p`.
+ *
+ * @param t - Active test context, used to register the cleanup hook.
+ * @param directory - Absolute path of the directory to remove afterwards.
+ * @returns The directory, so the call can wrap an expression.
+ */
+export function removeAfter(t: TestContext, directory: string): string {
+  t.after(() => {
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  return directory;
+}
+
+/**
  * Writes a file inside a fixture directory, creating parent directories.
  *
  * @param dir - Fixture root directory.

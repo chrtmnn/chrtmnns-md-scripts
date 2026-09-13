@@ -26,8 +26,14 @@ export function parseMergeName(value: string): string {
     throw new Error(`Invalid --merge name: ${value}. Expected a PDF base name.`);
   }
 
-  if (/[<>:"/\\|?*]/.test(name)) {
+  if (/[/\\]/.test(name) || /^[A-Za-z]:/.test(name)) {
     throw new Error(`Invalid --merge name: ${value}. Expected a plain file name without path separators.`);
+  }
+
+  if (/[<>:"|?*]/.test(name)) {
+    throw new Error(
+      `Invalid --merge name: ${value}. Expected a plain file name without the characters <>:"|?*.`,
+    );
   }
 
   return name;

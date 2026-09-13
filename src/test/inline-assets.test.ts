@@ -118,17 +118,29 @@ test('inlineAssets embeds a relative asset resolved against the source directory
   );
 });
 
-test('inlineAssets embeds an absolute target, so a Windows drive letter is not read as a URL scheme', (t) => {
+test('inlineAssets embeds an absolute target', (t) => {
   const dir = tempDir(t);
   const asset = writePng(dir, 'assets/logo.png');
-  // On Windows this is `C:\...\logo.png`: the leading `C:` must not be
-  // mistaken for a URL scheme, which is why a scheme needs two characters.
   const context = contextFor(dir, `![logo](${asset.split(path.sep).join('/')})\n`);
 
   const warnings = inlineAssets(context);
 
   assert.deepEqual(warnings, []);
   assert.equal(fs.readFileSync(context.convertedMarkdown, 'utf8').includes(`base64,${PNG_BASE64}`), true);
+});
+
+test('inlineAssets does not read a Windows drive letter as a URL scheme', (t) => {
+  const dir = tempDir(t);
+  // A literal drive-letter target, so the claim is exercised on every
+  // platform rather than only where `path.sep` happens to produce one: `C:`
+  // must be treated as a path (reported as missing) and not skipped as a URL,
+  // which is why a scheme needs at least two characters.
+  const context = contextFor(dir, '![logo](C:/docs/logo.png)\n');
+
+  const warnings = inlineAssets(context);
+
+  assert.deepEqual(warnings, ['Asset not found, left unresolved: C:/docs/logo.png']);
+  assert.equal(fs.readFileSync(context.convertedMarkdown, 'utf8'), '![logo](C:/docs/logo.png)\n');
 });
 
 test('inlineAssets leaves targets that already resolve inside the work directory alone', (t) => {

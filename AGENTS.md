@@ -48,8 +48,13 @@ inside `src/` so `tsconfig.json` (`rootDir: src`) type-checks them along with
 everything else — `pnpm typecheck` covers the tests too.
 
 `src/test/helpers.ts` holds the fixture helpers: every test writes into its own
-`fs.mkdtempSync` directory that is removed by a `t.after` hook, so a run never
-leaves files in the repository.
+`fs.mkdtempSync` directory that is removed by a `t.after` hook, so a run leaves
+nothing behind — neither in the repository nor in the OS temp directory (#53).
+A step that creates a directory of its own is covered by `removeAfter(t, dir)`
+from the same module: `prepareWorkdir` and `mergeMarkdown` place their temp
+directory in `os.tmpdir()` unless `-r`/`-p` says otherwise, and the pipeline's
+own cleanup never runs in a unit test, so the test registers what the step
+created instead of side-stepping the default placement.
 
 Scope: the pure logic only. Steps that shell out through `runNpx` (doctoc,
 mermaid-cli, md-to-pdf) are not covered — the tests must stay fast and must not
@@ -221,7 +226,7 @@ When nothing matches, a path value keeps the single-line `Stylesheet not found: 
 
 The personal default replaces rather than extends, exactly like any other `-s` value — a user file therefore has to carry the `@page` setup, `.page-break`, `.document-break` and every custom property `--css-var` targets, which the README says under *Personal Stylesheets*. `ConverterOptions.stylesheetOrigin` carries the origin so `md2pdf.ts` can print `describeStylesheet` under `--verbose`, since an unflagged switch of the default is otherwise invisible.
 
-Tests must never touch the real home directory: the lookup rules take both directories and an `isFile` callback as parameters, and the `resolveOptions` tests point both environment variables at temp directories.
+Tests must never touch the real home directory: the lookup rules take both directories and an `isFile` callback as parameters, and a file-level `beforeEach` in `resolve-options.test.ts` points both environment variables at fresh temp directories for *every* test in it (#53), so a new test cannot forget the isolation; a test that needs a specific directory still calls `withEnv` and wins, because it runs afterwards.
 
 ### CSS variable system
 

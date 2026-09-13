@@ -10,18 +10,33 @@
 
 import fs from 'fs';
 import path from 'path';
-import test from 'node:test';
+import test, { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { DOCUMENT_BREAK_HTML } from '../steps/merge-assembly';
-import { mergeMarkdown } from '../steps/merge-markdown';
-import { comparablePath, makeOptions, tempDir, writePng, writeFile } from './helpers';
+import { MergedInput, mergeMarkdown } from '../steps/merge-markdown';
+import { ConverterOptions } from '../types';
+import { comparablePath, makeOptions, removeAfter, tempDir, writePng, writeFile } from './helpers';
+
+/**
+ * Runs the production merge step and registers the temp directory it created.
+ *
+ * Without `-r`/`-p` the merge directory lands in `os.tmpdir()`, outside the
+ * fixture — and the pipeline's own cleanup (`md2pdf.ts`) never runs in a unit
+ * test, so every run used to leave a `merge_*` directory behind. Registering
+ * the result keeps the default placement under test.
+ */
+function merge(t: TestContext, files: string[], options: ConverterOptions): MergedInput {
+  const result = mergeMarkdown(files, options);
+  removeAfter(t, result.mergeDir);
+  return result;
+}
 
 test('concatenates documents with a break block between them', (t) => {
   const dir = tempDir(t);
   const a = writeFile(dir, 'a.md', '# A\n\nBody A.\n');
   const b = writeFile(dir, 'b.md', '# B\n\nBody B.\n');
 
-  const result = mergeMarkdown([a, b], makeOptions({ merge: 'combined' }));
+  const result = merge(t, [a, b], makeOptions({ merge: 'combined' }));
 
   const merged = fs.readFileSync(result.mergedFile, 'utf8');
   assert.equal(merged, `# A\n\nBody A.\n\n${DOCUMENT_BREAK_HTML}\n\n# B\n\nBody B.\n`);
@@ -35,7 +50,7 @@ test('a document without a trailing newline cannot glue onto the next one', (t) 
   const b = writeFile(dir, 'b.md', '# B\n');
 
   const merged = fs.readFileSync(
-    mergeMarkdown([a, b], makeOptions({ merge: 'combined' })).mergedFile,
+    merge(t, [a, b], makeOptions({ merge: 'combined' })).mergedFile,
     'utf8',
   );
 
@@ -48,7 +63,7 @@ test('strips a UTF-8 BOM from every document, not just the first', (t) => {
   const b = writeFile(dir, 'b.md', '\uFEFF# B\n');
 
   const merged = fs.readFileSync(
-    mergeMarkdown([a, b], makeOptions({ merge: 'combined' })).mergedFile,
+    merge(t, [a, b], makeOptions({ merge: 'combined' })).mergedFile,
     'utf8',
   );
 
@@ -60,7 +75,7 @@ test('names the merged file after --merge so the rest of the pipeline derives fr
   const dir = tempDir(t);
   const a = writeFile(dir, 'a.md', '# A\n');
 
-  const result = mergeMarkdown([a], makeOptions({ merge: 'quarterly-report' }));
+  const result = merge(t, [a], makeOptions({ merge: 'quarterly-report' }));
 
   assert.equal(path.basename(result.mergedFile), 'quarterly-report.md');
 });
@@ -70,8 +85,8 @@ test('creates a distinct, existing merge directory per run', (t) => {
   const a = writeFile(dir, 'a.md', '# A\n');
   const options = makeOptions({ merge: 'combined' });
 
-  const first = mergeMarkdown([a], options);
-  const second = mergeMarkdown([a], options);
+  const first = merge(t, [a], options);
+  const second = merge(t, [a], options);
 
   for (const result of [first, second]) {
     assert.equal(fs.statSync(result.mergeDir).isDirectory(), true);
@@ -86,13 +101,10 @@ test('honours --temp-root and --temp-in-output for the merge directory', (t) => 
   const root = path.join(dir, 'scratch');
   const out = path.join(dir, 'out');
 
-  const rooted = mergeMarkdown([a], makeOptions({ merge: 'combined', tempRoot: root }));
+  const rooted = merge(t, [a], makeOptions({ merge: 'combined', tempRoot: root }));
   assert.equal(comparablePath(path.dirname(rooted.mergeDir)), comparablePath(root));
 
-  const inOutput = mergeMarkdown(
-    [a],
-    makeOptions({ merge: 'combined', tempInOutput: true, outputDir: out }),
-  );
+  const inOutput = merge(t, [a], makeOptions({ merge: 'combined', tempInOutput: true, outputDir: out }));
   assert.equal(comparablePath(path.dirname(inOutput.mergeDir)), comparablePath(out));
 });
 
@@ -101,13 +113,10 @@ test('defaults the target directory to the common ancestor, unless -o is given',
   const a = writeFile(dir, 'one/a.md', '# A\n');
   const b = writeFile(dir, 'two/b.md', '# B\n');
 
-  const defaulted = mergeMarkdown([a, b], makeOptions({ merge: 'combined' }));
+  const defaulted = merge(t, [a, b], makeOptions({ merge: 'combined' }));
   assert.equal(comparablePath(defaulted.targetDir), comparablePath(dir));
 
-  const explicit = mergeMarkdown(
-    [a, b],
-    makeOptions({ merge: 'combined', outputDir: path.join(dir, 'out') }),
-  );
+  const explicit = merge(t, [a, b], makeOptions({ merge: 'combined', outputDir: path.join(dir, 'out') }));
   assert.equal(comparablePath(explicit.targetDir), comparablePath(path.join(dir, 'out')));
   assert.equal(fs.existsSync(explicit.targetDir), true, 'the target directory is created');
 });
@@ -117,11 +126,11 @@ test('warns once when the inputs span more than one directory', (t) => {
   const a = writeFile(dir, 'one/a.md', '# A\n');
   const b = writeFile(dir, 'two/b.md', '# B\n');
 
-  const spread = mergeMarkdown([a, b], makeOptions({ merge: 'combined' }));
+  const spread = merge(t, [a, b], makeOptions({ merge: 'combined' }));
   assert.equal(spread.warnings.length, 1);
   assert.match(spread.warnings[0], /relative links are not rewritten/);
 
-  const together = mergeMarkdown([a, a], makeOptions({ merge: 'combined' }));
+  const together = merge(t, [a, a], makeOptions({ merge: 'combined' }));
   assert.deepEqual(together.warnings, []);
 });
 
@@ -130,7 +139,7 @@ test('reports missing inputs as skipped instead of failing', (t) => {
   const a = writeFile(dir, 'a.md', '# A\n');
   const missing = path.join(dir, 'gone.md');
 
-  const result = mergeMarkdown([a, missing], makeOptions({ merge: 'combined' }));
+  const result = merge(t, [a, missing], makeOptions({ merge: 'combined' }));
 
   assert.deepEqual(result.skipped, [missing]);
   assert.equal(result.mergedCount, 1);
@@ -155,7 +164,7 @@ test('pins relative image targets to their own source document (#28)', (t) => {
   writePng(dir, 'two/images/logo.png');
 
   const merged = fs.readFileSync(
-    mergeMarkdown([a, b], makeOptions({ merge: 'combined' })).mergedFile,
+    merge(t, [a, b], makeOptions({ merge: 'combined' })).mergedFile,
     'utf8',
   );
 
@@ -170,7 +179,7 @@ test('leaves image targets that do not resolve exactly as written (#28)', (t) =>
   const a = writeFile(dir, 'a.md', '![gone](images/missing.png)\n\n![remote](https://example.com/x.png)\n');
 
   const merged = fs.readFileSync(
-    mergeMarkdown([a], makeOptions({ merge: 'combined' })).mergedFile,
+    merge(t, [a], makeOptions({ merge: 'combined' })).mergedFile,
     'utf8',
   );
 

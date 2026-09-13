@@ -7,7 +7,7 @@
  */
 
 import path from 'path';
-import test, { TestContext } from 'node:test';
+import test, { beforeEach, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { Command } from 'commander';
 import { createProgram } from '../cli-program';
@@ -49,6 +49,24 @@ function setEnv(name: string, value: string | undefined): void {
     process.env[name] = value;
   }
 }
+
+/**
+ * Points both directory variables at throwaway locations before every test in
+ * this file.
+ *
+ * Without `MD2PDF_CONFIG_DIR`, `chooseStylesheet` falls back to the real
+ * `~/.md2pdf` and stats the developer's own `default.css`, which would make
+ * any test that later asserts on `stylesheet`/`stylesheetOrigin` depend on the
+ * machine it runs on. Doing it here rather than per test makes the guarantee
+ * structural: a new test cannot forget it. Tests that need a specific
+ * directory still call `withEnv` and win, because it runs afterwards.
+ */
+beforeEach((context) => {
+  // Registered at file level, so the hook only ever runs for a test; the
+  // declared `TestContext | SuiteContext` covers hooks inside a `describe`.
+  const t = context as TestContext;
+  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t), MD2PDF_INVOCATION_DIR: tempDir(t) });
+});
 
 /**
  * Sets the package override variables for one test; the ones not given are
