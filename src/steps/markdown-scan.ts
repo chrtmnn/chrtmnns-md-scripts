@@ -8,6 +8,8 @@
  * Both consumers scan through {@link mapLiveContent}, which hides the two
  * containers that make a `#` line look like a heading without rendering as
  * one: fenced code blocks (#18) and HTML comment blocks (#32).
+ * `doctoc-markers.ts` uses the underlying {@link classifyLines} to tell a
+ * genuine doctoc marker comment from a documented example (#44).
  */
 
 /**
@@ -196,19 +198,44 @@ function indexOfCommentClose(line: string, open: number): number {
  *   fenced block, or a line belonging to an HTML comment block).
  */
 export function mapLiveContent(lines: string[]): (string | null)[] {
-  const live: (string | null)[] = [];
+  return classifyLines(lines).map((kind, i) => (kind === 'content' ? stripInlineComments(lines[i]) : null));
+}
+
+/**
+ * What a line is with respect to the containers {@link mapLiveContent}
+ * tracks:
+ *
+ * - `content`: the line renders (subject to its inline comments).
+ * - `fence`: a fence delimiter, or a line inside a fenced code block.
+ * - `comment-start`: the line whose leading `<!--` opens an HTML comment
+ *   block, whether or not the block closes on that same line.
+ * - `comment`: a later line of an HTML comment block, up to and including the
+ *   one carrying `-->`.
+ */
+export type LineKind = 'content' | 'fence' | 'comment-start' | 'comment';
+
+/**
+ * Classifies every line by the container it belongs to, with the fence and
+ * HTML-comment rules described at {@link mapLiveContent}. Exposed separately
+ * because a doctoc marker *is* an HTML comment: `doctoc-markers.ts` needs to
+ * know which lines open a real comment block, not just which lines render.
+ *
+ * @param lines - Document lines, without line terminators.
+ * @returns An array parallel to `lines` holding each line's {@link LineKind}.
+ */
+export function classifyLines(lines: string[]): LineKind[] {
+  const kinds: LineKind[] = [];
   let fenceChar: string | null = null;
   let fenceLen = 0;
   let inComment = false;
 
   for (const line of lines) {
     if (inComment) {
-      // The line that closes an HTML block still belongs to it, so it carries
-      // no live content either way.
+      // The line that closes an HTML block still belongs to it.
       if (line.includes(COMMENT_CLOSE)) {
         inComment = false;
       }
-      live.push(null);
+      kinds.push('comment');
       continue;
     }
 
@@ -219,27 +246,27 @@ export function mapLiveContent(lines: string[]): (string | null)[] {
         fenceChar = null;
         fenceLen = 0;
       }
-      live.push(null);
+      kinds.push('fence');
       continue;
     }
 
     if (fence) {
       fenceChar = fence.char;
       fenceLen = fence.len;
-      live.push(null);
+      kinds.push('fence');
       continue;
     }
 
     if (/^ {0,3}<!--/.test(line)) {
       inComment = indexOfCommentClose(line, line.indexOf(COMMENT_OPEN)) === -1;
-      live.push(null);
+      kinds.push('comment-start');
       continue;
     }
 
-    live.push(stripInlineComments(line));
+    kinds.push('content');
   }
 
-  return live;
+  return kinds;
 }
 
 /**

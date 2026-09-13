@@ -252,6 +252,8 @@ The helper sets `display: block` internally, so inline elements work too. The ma
 
 On the next conversion, doctoc fills the block with the current heading structure. Subsequent runs keep the block in place and update its content.
 
+Only a marker block written on its own lines counts. Markers that merely appear as examples, inside a code block or in inline code like the one above, are ignored and stay intact. If a file has a START marker without a matching END marker after it, the conversion of that file fails with an error and the file is left untouched. Otherwise doctoc would replace everything after the START marker.
+
 If the source Markdown does not yet contain the marker block, pass `-f` once to let doctoc create it on the temporary conversion copy. The newly created block is then placed directly before the first second-order (`##`) heading in the file, regardless of where doctoc itself would otherwise have inserted it.
 
 To also write the refreshed TOC back into the original Markdown file (instead of only into the temporary conversion copy), combine `-u` with an existing marker block.

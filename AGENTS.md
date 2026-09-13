@@ -66,6 +66,8 @@ tested modules only.
 its own module rather than being `export`ed out of a file that also does I/O.
 `markdown-scan.ts` (scanning primitives, out of `run-doctoc.ts`),
 `toc-placement.ts` (TOC relocation rules, out of `run-doctoc.ts`),
+`doctoc-markers.ts` (genuine-marker detection, masking and the `-u` write-back
+check, out of `run-doctoc.ts`),
 `merge-assembly.ts` (concatenation and common-ancestor computation, out of
 `merge-markdown.ts`), `option-values.ts` (`--css-var` / `--merge`
 validation, out of `resolve-options.ts`), `css-import-conditions.ts`
@@ -136,13 +138,15 @@ Positional arguments may be files or directories. A file positional that does no
 
 ### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
 
-`runDoctoc` runs automatically when the source file contains `<!-- START doctoc generated TOC`. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. By default, doctoc runs on a temp copy. The `-u`/`--update-md-toc` flag also updates the original Markdown file when it already has doctoc markers.
+`runDoctoc` runs automatically when the source file contains a **genuine** doctoc START marker: a line that opens an HTML comment block with `<!-- START doctoc `, outside fenced code and other comment blocks. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. doctoc itself only ever runs on the temp copy. The `-u`/`--update-md-toc` flag writes the refreshed copy back to the original Markdown file when the source has a genuine marker pair, and only if nothing outside the TOC block changed (`isTocOnlyRefresh`).
 
-When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--force-doctoc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings that do not render are ignored when locating the target position (see *Markdown scanning*). If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. The relocation rules themselves are a pure string-to-string transformation in `src/steps/toc-placement.ts` (`relocateTocBeforeFirstH2`); `run-doctoc.ts` only applies them to the temp copy and writes the file back when the content actually changed.
+doctoc 2.3.0 is not fence-aware: it takes the first line matching `<!-- START doctoc ` anywhere and, without an END marker after it, replaces everything to the end of the file (#44). The pure rules in `src/steps/doctoc-markers.ts` guard against that. `scanDoctocMarkers` classifies the source as `none` / `pair` / `broken`. `maskDocumentedMarkers` hides every non-genuine marker occurrence (fenced, inline or indented code, comments) from doctoc by inserting U+E000 after its `<!--`, and `unmaskDocumentedMarkers` restores them after the run, so documented examples survive byte-identically. A genuine START marker without a following END marker (`broken`) fails that file before doctoc runs.
+
+When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--force-doctoc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings that do not render are ignored when locating the target position (see *Markdown scanning*). If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. The relocation rules themselves are a pure string-to-string transformation in `src/steps/toc-placement.ts` (`relocateTocBeforeFirstH2`); `run-doctoc.ts` applies them to the temp copy while documented markers are still masked, so an example can never be mistaken for the generated block.
 
 ### Markdown scanning (`src/steps/markdown-scan.ts`)
 
-Both heading lookups — `findFirstHeading` (→ `extractTitle` → `--document-title`) and `findFirstH2Index` (→ `relocateTocBeforeFirstH2`) — scan through `mapLiveContent`, which reduces the document to the lines that actually render. Keeping the tracking in one place is what stops the two consumers from drifting apart; a container that hides a heading has to hide it from both.
+Both heading lookups — `findFirstHeading` (→ `extractTitle` → `--document-title`) and `findFirstH2Index` (→ `relocateTocBeforeFirstH2`) — scan through `mapLiveContent`, which reduces the document to the lines that actually render. Keeping the tracking in one place is what stops the two consumers from drifting apart; a container that hides a heading has to hide it from both. `classifyLines` exposes the same tracking per line (`content` / `fence` / `comment-start` / `comment`); `mapLiveContent` is built on it, and `doctoc-markers.ts` uses it directly, because a doctoc marker *is* an HTML comment and would never show up as live content.
 
 Two containers are tracked, both line-oriented:
 
