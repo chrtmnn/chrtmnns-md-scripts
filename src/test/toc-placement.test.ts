@@ -186,3 +186,26 @@ test('a leading BOM does not hide a setext h2 from the placement scan (#48)', ()
 
   assert.equal(relocateTocBeforeFirstH2(`﻿${body}`), `﻿${expected}`);
 });
+
+test('a documented marker pair inside a fence is not mistaken for the TOC (#47)', () => {
+  const input = doc([
+    '# Title',
+    '',
+    '```markdown',
+    ...TOC_BLOCK,
+    '```',
+    '',
+    ...TOC_BLOCK,
+    '',
+    'Intro.',
+    '',
+    '## Second',
+  ]);
+
+  const output = relocateTocBeforeFirstH2(input);
+
+  assert.equal(
+    output,
+    doc(['# Title', '', '```markdown', ...TOC_BLOCK, '```', '', 'Intro.', '', ...TOC_BLOCK, '', '## Second']),
+  );
+});

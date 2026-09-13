@@ -61,6 +61,41 @@ test('transformImageTargets skips fenced code blocks', () => {
   assert.equal(output, ['```markdown', '![alt](a.png)', '```', '', '![alt](REWRITTEN)'].join('\n'));
 });
 
+test('transformImageTargets does not let an info-string fence close a block (#47)', () => {
+  // The standard way of documenting what a fenced block looks like: the inner
+  // ```js opens nothing and closes nothing, so only the last image renders.
+  const markdown = ['```', '![a](in-block.png)', '```js', '![b](fake-close.png)', '```', '![c](real.png)'].join('\n');
+
+  const output = transformImageTargets(markdown, () => 'REWRITTEN');
+
+  assert.equal(
+    output,
+    ['```', '![a](in-block.png)', '```js', '![b](fake-close.png)', '```', '![c](REWRITTEN)'].join('\n'),
+  );
+});
+
+test('inlineAssets embeds the image after a documented fence example (#47)', (t) => {
+  const dir = tempDir(t);
+  const markdown = ['```', '![a](images/logo.png)', '```js', '![b](images/logo.png)', '```', '![c](images/logo.png)'].join('\n');
+  const context = contextFor(dir, markdown);
+  writePng(path.join(dir, 'source'), 'images/logo.png');
+
+  const warnings = inlineAssets(context);
+
+  const output = fs.readFileSync(context.convertedMarkdown, 'utf8');
+  assert.deepEqual(warnings, []);
+  assert.equal(output.split(`data:image/png;base64,${PNG_BASE64}`).length - 1, 1, output);
+  assert.equal(output.endsWith(`![c](data:image/png;base64,${PNG_BASE64})`), true, output);
+});
+
+test('transformImageTargets skips HTML comment blocks (#47)', () => {
+  const markdown = ['<!--', '![alt](a.png)', '-->', '', '![alt](a.png)'].join('\n');
+
+  const output = transformImageTargets(markdown, () => 'REWRITTEN');
+
+  assert.equal(output, ['<!--', '![alt](a.png)', '-->', '', '![alt](REWRITTEN)'].join('\n'));
+});
+
 test('transformImageTargets skips inline code spans and restores them verbatim', () => {
   const markdown = 'Write `![alt](a.png)` to embed ![alt](a.png).\n';
 

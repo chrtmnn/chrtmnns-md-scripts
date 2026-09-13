@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ConversionContext } from '../types';
+import { classifyLines } from './markdown-scan';
 
 /**
  * Upper size limit for a single inlined asset.
@@ -31,9 +32,6 @@ const MIME_TYPES: Record<string, string> = {
   '.tiff': 'image/tiff',
   '.webp': 'image/webp',
 };
-
-/** Opening or closing fence of a fenced code block, with up to three spaces of indent. */
-const FENCE_RE = /^[ \t]{0,3}(`{3,}|~{3,})/;
 
 /** Markdown inline image, captured up to (but excluding) the target itself. */
 const MD_IMAGE_RE = /(!\[[^\]]*\]\(\s*)(<[^>\n]*>|[^\s()]+)/g;
@@ -155,8 +153,8 @@ function formatMarkdownTarget(target: string): string {
 /**
  * Applies a transformation to every image target in a Markdown document.
  *
- * Fenced code blocks and inline code spans are skipped so documentation that
- * *shows* image syntax is never rewritten. Both Markdown image syntax and
+ * Fenced code blocks, HTML comment blocks and inline code spans are skipped
+ * so documentation that *shows* image syntax is never rewritten. Both Markdown image syntax and
  * HTML `<img src>` attributes are covered; reference-style images
  * (`![alt][ref]`) are deliberately left alone because a link reference
  * definition is shared between links and images.
@@ -167,20 +165,16 @@ function formatMarkdownTarget(target: string): string {
  */
 export function transformImageTargets(markdown: string, transform: TargetTransform): string {
   const lines = markdown.split('\n');
-  let fence: string | undefined;
+  const kinds = classifyLines(lines);
 
-  const rewritten = lines.map((line) => {
-    const fenceMatch = FENCE_RE.exec(line);
-
-    if (fence) {
-      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) {
-        fence = undefined;
-      }
-      return line;
-    }
-
-    if (fenceMatch) {
-      fence = fenceMatch[1];
+  const rewritten = lines.map((line, index) => {
+    // Only lines that render as Markdown are rewritten. Delegating the
+    // tracking to `markdown-scan.ts` keeps this in step with the title and
+    // TOC scanners: a local copy had drifted from the CommonMark rule that an
+    // info-string fence (```js) can open a block but never close one, so a
+    // documented example closed the block early and the next real image was
+    // silently left unembedded (#47).
+    if (kinds[index] !== 'content') {
       return line;
     }
 

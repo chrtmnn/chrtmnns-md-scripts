@@ -7,7 +7,7 @@
  * rules.
  */
 
-import { BOM, findFirstH2Index, findFrontmatterEnd, isBlank } from './markdown-scan';
+import { BOM, classifyLines, findFirstH2Index, findFrontmatterEnd, isBlank } from './markdown-scan';
 
 /** Opening marker of a doctoc-generated table of contents block. */
 export const DOCTOC_MARKER = '<!-- START doctoc generated TOC';
@@ -127,12 +127,20 @@ function relocateInBody(raw: string): string {
     lines.pop();
   }
 
-  const startIdx = lines.findIndex((line) => line.includes(DOCTOC_MARKER));
+  // A doctoc marker is an HTML comment, so only a line that genuinely opens
+  // one counts. A plain `includes` would also find the markers a document
+  // merely *shows* inside a fenced example and relocate those lines instead
+  // of the real TOC (#47).
+  const kinds = classifyLines(lines);
+
+  const startIdx = lines.findIndex((line, i) => kinds[i] === 'comment-start' && line.includes(DOCTOC_MARKER));
   if (startIdx === -1) {
     return raw;
   }
 
-  const endIdx = lines.findIndex((line, i) => i >= startIdx && line.includes(DOCTOC_END_MARKER));
+  const endIdx = lines.findIndex(
+    (line, i) => i >= startIdx && kinds[i] !== 'fence' && kinds[i] !== 'content' && line.includes(DOCTOC_END_MARKER),
+  );
   if (endIdx === -1) {
     return raw;
   }
