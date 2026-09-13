@@ -139,7 +139,7 @@ md2pdf --png README.md
 | `-u, --update-md-toc`     | Update an existing doctoc TOC in the original Markdown file. Does not create a new source TOC.            |
 | `-k, --keep-temp`         | Keep the temporary work directory and print its path.                                                     |
 | `--verbose`               | Print output from doctoc, mermaid-cli, and md-to-pdf while they run.                                      |
-| `--debug`                 | Also write a standalone HTML file next to the PDF using the same stylesheet.                              |
+| `--debug`                 | Also write a standalone HTML file next to the PDF using the same stylesheet. An existing HTML file that md2pdf did not generate is never overwritten (see [Output Files](#output-files)). |
 | `--png`                   | Render Mermaid diagrams as PNG instead of SVG. Useful for PDF viewers or downstream tools that handle embedded SVG poorly. |
 | `-h, --help`              | Show help.                                                                                                |
 
@@ -168,6 +168,15 @@ A positional argument may be a Markdown file or a folder. A folder contributes t
 - Pass `-R` to include subfolders. `node_modules`, `.git`, and any folder whose name starts with a dot are skipped, and folder links (symlinks and junctions) are not followed, so a link pointing back at a parent folder cannot cause an endless loop.
 - Passing both a folder and a file inside it converts that file once, not twice.
 - A folder without any `.md` file produces a warning and is not counted as a failure.
+- Files you name directly follow the same extension rule: `md2pdf notes.txt`, or `md2pdf *` in a folder with other files, skips everything that is not `.md` with a warning, and each skipped file counts as a failure. Use `md2pdf .` to convert all Markdown files of a folder.
+
+### Output Files
+
+Each PDF is named after its Markdown file and replaces an existing PDF of that name.
+
+- The PDF is first written to a temporary file next to the target and then swapped in. If writing fails — the old PDF is open in a viewer that locks it, the disk is full — the previous PDF stays as it was.
+- If two inputs would produce the same output, for example `md2pdf -R -o pdfs .` over a tree with several `README.md` files, md2pdf lists them and stops **before converting anything**. Convert them in separate runs or into different `-o` folders.
+- The `--debug` HTML file carries a `<meta name="generator" content="md2pdf">` tag. An existing HTML file without that tag, such as a hand-written `index.html` next to `index.md`, is not replaced; that document fails instead. HTML files written by md2pdf versions before this check lack the tag too, so delete them once.
 
 ### Merging Into One PDF
 

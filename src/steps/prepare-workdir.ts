@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ConversionContext, ConverterOptions } from '../types';
+import { deriveOutputPaths } from './output-targets';
 
 /**
  * Creates the per-file conversion context and temporary work directory.
@@ -17,8 +18,8 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
 
   const absSrc = path.resolve(sourceFile);
   const baseName = path.basename(sourceFile);
-  const stem = path.parse(baseName).name;
   const sourceDir = path.dirname(absSrc);
+  const { stem, targetDir, outputPdf, outputHtml } = deriveOutputPaths(absSrc, options.outputDir);
 
   let workdir: string;
   if (options.tempInOutput) {
@@ -33,7 +34,6 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
     workdir = fs.mkdtempSync(path.join(os.tmpdir(), `${stem}_`));
   }
 
-  const targetDir = options.outputDir ? path.resolve(options.outputDir) : sourceDir;
   fs.mkdirSync(targetDir, { recursive: true });
 
   return {
@@ -46,9 +46,9 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
     inputMarkdown: absSrc,
     convertedMarkdown: path.join(workdir, `${stem}_converted.md`),
     targetDir,
-    outputPdf: path.join(targetDir, `${stem}.pdf`),
+    outputPdf,
     tempPdf: path.join(workdir, `${stem}_converted.pdf`),
-    outputHtml: path.join(targetDir, `${stem}.html`),
+    outputHtml,
     tempHtml: path.join(workdir, `${stem}_converted.html`),
     docTitle: stem,
   };

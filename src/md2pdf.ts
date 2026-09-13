@@ -5,8 +5,9 @@ import os from 'os';
 import path from 'path';
 import { program } from 'commander';
 import { cleanup } from './steps/cleanup';
-import { copyOutput } from './steps/copy-output';
+import { assertOutputReplaceable, copyOutput } from './steps/copy-output';
 import { MergedInput, mergeMarkdown } from './steps/merge-markdown';
+import { describeOutputCollisions, findOutputCollisions } from './steps/output-targets';
 import { resolveInputs } from './steps/resolve-inputs';
 import { resolveStylesheet } from './steps/resolve-stylesheet';
 import { extractTitle } from './steps/extract-title';
@@ -99,6 +100,23 @@ async function run(options: ConverterOptions): Promise<void> {
   // concrete list of Markdown files before anything else runs.
   const inputs = runStep('Resolving input files', () => resolveInputs(program.args, options));
   inputs.warnings.forEach((warning) => log.warn(warning));
+  inputs.rejected.forEach((file) => log.warn(`Skipped non-Markdown file: ${file}`));
+
+  // Every output path is known before anything is written, so a collision
+  // aborts the run instead of letting a later file silently replace an
+  // earlier one's output. A merged run writes a single output. Missing files
+  // write nothing and are reported later.
+  if (!options.merge) {
+    const collisions = findOutputCollisions(
+      inputs.files.filter((file) => fs.existsSync(file)),
+      options.outputDir,
+    );
+    if (collisions.length > 0) {
+      log.error(describeOutputCollisions(collisions));
+      outro('Conversion aborted');
+      process.exit(1);
+    }
+  }
 
   // `--merge` concatenates the resolved Markdown before rendering and then
   // feeds the pipeline a single file, so every other flag keeps working
@@ -118,7 +136,7 @@ async function run(options: ConverterOptions): Promise<void> {
     merged = runStep('Merging Markdown files', () => mergeMarkdown(inputs.files, options));
     merged.warnings.forEach((warning) => log.warn(warning));
     merged.skipped.forEach((file) => log.warn(`Skipped missing file: ${file}`));
-    skippedCount = merged.skipped.length;
+    skippedCount = merged.skipped.length + inputs.rejected.length;
     filesToConvert = [merged.mergedFile];
 
     // The merged file lives in a temp directory, so the target directory has
@@ -133,7 +151,9 @@ async function run(options: ConverterOptions): Promise<void> {
   const cssTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2pdf_css_'));
 
   let convertedCount = 0;
-  let failedCount = 0;
+  // Rejected non-Markdown positionals count like missing files; a merged run
+  // reports them through skippedCount instead.
+  let failedCount = merged ? 0 : inputs.rejected.length;
 
   try {
     const effectiveStylesheet = resolveStylesheet(options, cssTempDir);
@@ -151,6 +171,9 @@ async function run(options: ConverterOptions): Promise<void> {
       context.effectiveStylesheet = effectiveStylesheet;
 
       try {
+        // Checked before `-u` can write back to the source and before any
+        // rendering, so a protected output fails the file without side effects.
+        assertOutputReplaceable(context);
         if (shouldRunDoctoc(options, context.sourceFile)) {
           runStep('Table of contents', () => runDoctoc(context));
         }

@@ -30,6 +30,12 @@ export type ResolvedInputs = {
    * file" path keeps reporting them exactly as the user typed them.
    */
   files: string[];
+  /**
+   * Existing file positionals that are not Markdown files, as typed. They
+   * are left out of {@link ResolvedInputs.files}: rendering `foo.pdf` would
+   * write `foo.pdf` over itself. The caller counts them as failed.
+   */
+  rejected: string[];
   /** Non-fatal messages the caller should surface, e.g. empty directories. */
   warnings: string[];
 };
@@ -64,6 +70,16 @@ function isDescendableDirectory(name: string): boolean {
 }
 
 /**
+ * Checks whether a file name carries the Markdown extension.
+ *
+ * @param name - File name or path.
+ * @returns `true` for `.md` in any letter case.
+ */
+function hasMarkdownExtension(name: string): boolean {
+  return path.extname(name).toLowerCase() === MARKDOWN_EXTENSION;
+}
+
+/**
  * Checks whether a directory entry is a Markdown file that should be
  * collected.
  *
@@ -76,7 +92,7 @@ function isDescendableDirectory(name: string): boolean {
  * @returns `true` when the entry is a readable Markdown file.
  */
 function isMarkdownFile(entry: fs.Dirent, fullPath: string): boolean {
-  if (path.extname(entry.name).toLowerCase() !== MARKDOWN_EXTENSION) {
+  if (!hasMarkdownExtension(entry.name)) {
     return false;
   }
 
@@ -146,8 +162,9 @@ function collectFromDirectory(dir: string, recursive: boolean, collected: string
  * Expands the raw positional CLI arguments into the concrete list of
  * Markdown files to convert.
  *
- * File positionals are kept as they are, directory positionals contribute
- * the `*.md` files they contain at their own position in the list. The final
+ * Markdown file positionals are kept as they are, other existing files are
+ * rejected, and directory positionals contribute the `*.md` files they
+ * contain at their own position in the list. The final
  * list is deduplicated by resolved absolute path, keeping the first
  * occurrence, so passing both a folder and a file inside it converts that
  * file once.
@@ -158,6 +175,7 @@ function collectFromDirectory(dir: string, recursive: boolean, collected: string
  */
 export function resolveInputs(positionals: string[], options: ConverterOptions): ResolvedInputs {
   const files: string[] = [];
+  const rejected: string[] = [];
   const warnings: string[] = [];
   const seen = new Set<string>();
 
@@ -190,7 +208,13 @@ export function resolveInputs(positionals: string[], options: ConverterOptions):
     }
 
     if (!stats.isDirectory()) {
-      add(path.resolve(positional));
+      // The extension rule of directory expansion applies to explicit files
+      // too, which is what `md2pdf *` in a shell runs into.
+      if (hasMarkdownExtension(positional)) {
+        add(path.resolve(positional));
+      } else {
+        rejected.push(positional);
+      }
       continue;
     }
 
@@ -210,5 +234,5 @@ export function resolveInputs(positionals: string[], options: ConverterOptions):
     collected.forEach(add);
   }
 
-  return { files, warnings };
+  return { files, rejected, warnings };
 }

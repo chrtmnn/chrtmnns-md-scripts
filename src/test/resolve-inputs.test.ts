@@ -15,10 +15,23 @@ test('keeps file positionals and forwards missing ones verbatim', (t) => {
   const dir = tempDir(t);
   const file = writeFile(dir, 'doc.md', '# Doc');
 
-  const { files, warnings } = resolveInputs([file, 'does-not-exist.md'], makeOptions());
+  const { files, rejected, warnings } = resolveInputs([file, 'does-not-exist.md'], makeOptions());
 
   assert.deepEqual(files, [file, 'does-not-exist.md']);
+  assert.deepEqual(rejected, []);
   assert.deepEqual(warnings, []);
+});
+
+test('rejects existing file positionals without the .md extension', (t) => {
+  const dir = tempDir(t);
+  const markdown = writeFile(dir, 'upper.MD', '# Upper');
+  const pdf = writeFile(dir, 'victim.pdf', '%PDF-1.4');
+  const text = writeFile(dir, 'notes.markdown', '# Notes');
+
+  const { files, rejected } = resolveInputs([pdf, markdown, text, 'gone.pdf'], makeOptions());
+
+  assert.deepEqual(files, [markdown, 'gone.pdf'], 'a missing positional still reaches "Skipped missing file"');
+  assert.deepEqual(rejected, [pdf, text], 'rejected positionals are reported as typed');
 });
 
 test('expands a directory into its Markdown files at the positional position', (t) => {

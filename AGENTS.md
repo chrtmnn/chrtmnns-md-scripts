@@ -74,8 +74,10 @@ validation, out of `resolve-options.ts`), `css-import-conditions.ts`
 (`@import` layer/supports/media parsing, out of `resolve-stylesheet.ts`),
 `npx-invocation.ts` (the shell-free npx lookup and error formatting, out of
 `run-npx.ts`), `css-import-hoisting.ts` (remote `@import` placement and
-restating, out of `resolve-stylesheet.ts`) and `stylesheet-lookup.ts` (the `-s`
-lookup order, out of `resolve-options.ts`) all follow that split: the step file
+restating, out of `resolve-stylesheet.ts`), `stylesheet-lookup.ts` (the `-s`
+lookup order, out of `resolve-options.ts`) and `output-targets.ts` (output path
+derivation, collision detection and the debug-HTML generator marker, out of
+`prepare-workdir.ts` and `copy-output.ts`) all follow that split: the step file
 keeps the filesystem work, the extracted module keeps the rules.
 
 ## Architecture
@@ -91,12 +93,12 @@ Each per-file step is a function that accepts a `ConversionContext` and **mutate
 Before the per-file loop, three steps run once for the whole run and have their own signatures rather than taking a `ConversionContext`: `resolveInputs` (`src/steps/resolve-inputs.ts`) turns the raw positional arguments into the concrete list of Markdown files and returns that list; when `--merge` is set, `mergeMarkdown` (`src/steps/merge-markdown.ts`) concatenates that list into one temporary Markdown file (returned alongside its temp dir) that the loop then runs over exactly once; and `resolveStylesheet` (`src/steps/resolve-stylesheet.ts`) resolves the effective CSS path once for the whole run, returning it so `md2pdf.ts` can assign it to `context.effectiveStylesheet` inside the loop.
 
 ```
-resolveInputs → [mergeMarkdown] → resolveStylesheet → for each file:
-  prepareWorkdir → runDoctoc → extractTitle → renderMermaid
+resolveInputs → [findOutputCollisions | mergeMarkdown] → resolveStylesheet → for each file:
+  prepareWorkdir → assertOutputReplaceable → runDoctoc → extractTitle → renderMermaid
     → inlineAssets → renderPdf → [renderHtml] → copyOutput → cleanup
 ```
 
-`renderHtml` only runs when `--debug` is set, emitting a standalone HTML file alongside the PDF.
+`renderHtml` only runs when `--debug` is set, emitting a standalone HTML file alongside the PDF. `findOutputCollisions` runs for non-merged runs only; both it and `assertOutputReplaceable` are described under *Output writing*.
 
 All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContext`, `CssVarOverride`) are in `src/types.ts`.
 
@@ -116,13 +118,21 @@ All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContex
 
 Positional arguments may be files or directories. A file positional that does not exist is kept as-is and forwarded verbatim, so `prepareWorkdir` keeps producing its `Skipped missing file` warning; one that exists is resolved to an absolute path via `path.resolve`. A directory positional is replaced by the `*.md` files it contains (already absolute), at the position the user gave it.
 
-- Extension matching is case-insensitive (`.md`, `.MD`); `.markdown` is deliberately **not** matched.
+- Extension matching is case-insensitive (`.md`, `.MD`); `.markdown` is deliberately **not** matched. The rule applies to existing file positionals too (#45): one without the extension goes to `rejected` instead of `files`, because rendering `foo.pdf` would write `foo.pdf` over itself. `md2pdf.ts` warns `Skipped non-Markdown file` and counts each one as failed (as skipped in a merged run), so the run exits 1. A *missing* positional is forwarded regardless of its extension.
 - Ordering uses plain `<`/`>` on the raw file names (UTF-16 code-unit order) rather than `localeCompare`, so it cannot shift with the machine's locale or ICU build. Note that this sorts uppercase before lowercase, e.g. `README.MD` before `readme.md`.
 - `-R, --recursive` descends into subdirectories: a directory's own files first (sorted), then its subdirectories (sorted), each recursively. `-R` without a directory positional is a no-op.
 - Directories named in `SKIPPED_DIRECTORY_NAMES` (`node_modules`, `.git`) and any directory whose name starts with `.` are never descended into. They can still be expanded when passed explicitly as a positional.
 - Symlink loops are avoided by never following directory symlinks: recursion only descends into entries where `Dirent.isDirectory()` is true, which is false for symlinks and Windows junctions. No visited-realpath bookkeeping is needed because a cycle can only be formed through a link. Symlinked `.md` *files* are still collected (verified with an extra `statSync`).
 - The final list is deduplicated by `path.resolve`d path (case-insensitively on Windows), keeping the first occurrence, so passing both a folder and a file inside it converts that file once. This is `path.resolve`, not `fs.realpathSync`, so a symlink and its target both dedupe to the same key even though they are not the same file on disk (see #49 for where that falls short).
 - An empty directory produces a warning, not a failure.
+
+### Output writing (`src/steps/copy-output.ts`, `src/steps/output-targets.ts`)
+
+Three guards keep a run from destroying files it did not mean to replace (#45):
+
+- **Collisions are detected before the first write.** `deriveOutputPaths` is the only derivation of `targetDir` / `outputPdf` / `outputHtml`. `prepareWorkdir` uses it, and `md2pdf.ts` runs `findOutputCollisions` over the resolved inputs that exist before the loop starts, so the check cannot disagree with the paths that are actually written. Any collision aborts the whole run with `describeOutputCollisions`, nothing converted, exit 1. Only the PDF path is compared, since the HTML shares stem and directory; keys are case-insensitive on Windows only, like the input deduplication. Merged runs write a single output and skip the check.
+- **Outputs are swapped in, never copied over.** `copyOutput` first checks that every temp output exists, then stages each one as `.<name>.<pid>-<random>.tmp` in the target's own directory (`COPYFILE_EXCL`, so no rename crosses a filesystem) and `renameSync`s it over the target. The `finally` removes whatever a failure left staged. Copying straight to the target would not do: `copyFileSync` truncates the destination before the copy can fail. With `--debug` the two renames are not one transaction — a failure on the HTML rename leaves the new PDF next to the previous HTML. A killed process can leave a `.tmp` file behind.
+- **A debug HTML md2pdf did not write is never replaced.** `renderHtml` stamps `GENERATOR_MARKER` (`<meta name="generator" content="md2pdf">`) right after the opening `<head>` tag of md-to-pdf's output. `assertOutputReplaceable` throws for an existing `outputHtml` that is not a regular file or lacks the marker in its first 64 KiB. `md2pdf.ts` calls it first thing in each file's `try` — before `-u` can write back to the source and before anything renders — and `copyOutput` calls it again right before staging. A PDF at the output path is replaced without such a check, since regenerating it is the tool's job.
 
 ### Merging (`src/steps/merge-markdown.ts`)
 
