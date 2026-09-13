@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ConversionContext, ConverterOptions } from '../types';
-import { deriveOutputPaths } from './output-targets';
+import { deriveOutputPaths, shortenStemForTemp } from './output-targets';
 
 /**
  * Creates the per-file conversion context and temporary work directory.
@@ -20,18 +20,22 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
   const baseName = path.basename(sourceFile);
   const sourceDir = path.dirname(absSrc);
   const { stem, targetDir, outputPdf, outputHtml } = deriveOutputPaths(absSrc, options.outputDir);
+  // Every generated name is built from the shortened stem, so a very long
+  // source file name cannot push a temp name past the filesystem's limit and
+  // fail the run with a raw ENAMETOOLONG (#55).
+  const tempStem = shortenStemForTemp(stem);
 
   let workdir: string;
   if (options.tempInOutput) {
     const baseOut = options.outputDir ? path.resolve(options.outputDir) : sourceDir;
     fs.mkdirSync(baseOut, { recursive: true });
-    workdir = fs.mkdtempSync(path.join(baseOut, `${stem}_`));
+    workdir = fs.mkdtempSync(path.join(baseOut, `${tempStem}_`));
   } else if (options.tempRoot) {
     const tempRoot = path.resolve(options.tempRoot);
     fs.mkdirSync(tempRoot, { recursive: true });
-    workdir = fs.mkdtempSync(path.join(tempRoot, `${stem}_`));
+    workdir = fs.mkdtempSync(path.join(tempRoot, `${tempStem}_`));
   } else {
-    workdir = fs.mkdtempSync(path.join(os.tmpdir(), `${stem}_`));
+    workdir = fs.mkdtempSync(path.join(os.tmpdir(), `${tempStem}_`));
   }
 
   fs.mkdirSync(targetDir, { recursive: true });
@@ -44,12 +48,12 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
     stem,
     workdir,
     inputMarkdown: absSrc,
-    convertedMarkdown: path.join(workdir, `${stem}_converted.md`),
+    convertedMarkdown: path.join(workdir, `${tempStem}_converted.md`),
     targetDir,
     outputPdf,
-    tempPdf: path.join(workdir, `${stem}_converted.pdf`),
+    tempPdf: path.join(workdir, `${tempStem}_converted.pdf`),
     outputHtml,
-    tempHtml: path.join(workdir, `${stem}_converted.html`),
+    tempHtml: path.join(workdir, `${tempStem}_converted.html`),
     docTitle: stem,
   };
 }

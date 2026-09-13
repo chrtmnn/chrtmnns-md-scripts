@@ -179,7 +179,7 @@ This is a documented heuristic, not a CommonMark parser. Backslash-escaped hashe
 
 ### Temp directory strategy
 
-Each conversion creates an isolated temp directory via `fs.mkdtempSync(path.join(base, `${stem}_`))` (`stem_` followed by 6 random characters chosen by Node, e.g. `stem_aB3xQ9`). `mkdtempSync` creates the directory atomically, so a name collision fails loudly instead of two runs silently sharing a directory. Location (`-p` and `-r` are mutually exclusive, which Commander enforces; `prepare-workdir.ts` and `merge-markdown.ts` still check `-p` first, and the merge temp directory follows the same rules):
+Each conversion creates an isolated temp directory via `fs.mkdtempSync(path.join(base, `${stem}_`))` — with the stem passed through `shortenStemForTemp` (`output-targets.ts`), which caps it at 240 UTF-8 bytes so neither the directory nor `<stem>_converted.html` can exceed the filesystem's 255-byte name limit and fail the run with a raw `ENAMETOOLONG` (#55); the output PDF keeps the full stem (`stem_` followed by 6 random characters chosen by Node, e.g. `stem_aB3xQ9`). `mkdtempSync` creates the directory atomically, so a name collision fails loudly instead of two runs silently sharing a directory. Location (`-p` and `-r` are mutually exclusive, which Commander enforces; `prepare-workdir.ts` and `merge-markdown.ts` still check `-p` first, and the merge temp directory follows the same rules):
 - `-p`: inside the output directory (or source dir if `-o` is absent)
 - `-r <root>`: custom root directory
 - Default: OS temp dir
@@ -199,7 +199,9 @@ Because the renderer only sees the work directory, a relative image reference in
 - A target is left untouched when it resolves, relative to the work directory, to an existing file there — there is no check that the resolved path stays *inside* the work directory, so a `../`-prefixed target can escape it and would still be left untouched. In practice this is what keeps the Mermaid SVGs working.
 - URLs (`https://`, `data:`, protocol-relative) are left untouched. Windows drive letters are not mistaken for URL schemes because a scheme must be at least two characters.
 - Single-file runs resolve relative targets against `context.sourceDir`. Merged runs resolve them per source document inside `mergeMarkdown` (see below), so by the time this step runs they are already absolute.
-- A target that does not resolve to an existing file, or an asset larger than `MAX_INLINE_BYTES` (32 MiB), is reported as a warning and left as written.
+- A target that does not resolve to an existing file, or an asset larger than `MAX_INLINE_BYTES` (32 MiB), is reported as a warning and left as written; the warning names the file's own size, not the limit (#55).
+- A bare Markdown target may contain **balanced** parentheses, two levels deep (`screenshot(1).png`, `a(b(c)d).png`), which CommonMark allows and Windows screenshots produce (#55). Deeper nesting is left as written.
+- Each asset is read and base64-encoded once per run and reused for every further reference to the same resolved path (#55).
 
 A side effect worth knowing: the `--debug` HTML is now self-contained, so it renders correctly even when `-o` puts it somewhere other than the source directory.
 
@@ -213,7 +215,7 @@ A side effect worth knowing: the `--debug` HTML is now self-contained, so it ren
 
 The config directory is `MD2PDF_CONFIG_DIR` when set and non-empty, otherwise `~/.md2pdf` (`os.homedir()`). Stylesheets live directly in it; subdirectories are never searched for the `-s` name, although a stylesheet found there may still `@import` files from its subdirectories (see *CSS variable system*). A directory that carries the stylesheet's name is skipped. The match is passed on as an absolute path, since a relative value now refers to the caller's directory rather than the process working directory.
 
-When nothing matches, a path value keeps the single-line `Stylesheet not found: <path>` error, and a bare name lists every location that was tried.
+When nothing matches, a path value keeps the single-line `Stylesheet not found: <path>` error, and a bare name lists every location that was tried. An empty or whitespace-only `-s` value is an error of its own rather than a silent fallback to the default (#55).
 
 `chooseStylesheet` wraps that lookup with the choice for the whole run (#40) and reports the origin alongside the path:
 

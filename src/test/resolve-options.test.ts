@@ -325,3 +325,12 @@ test('rejects -u together with --merge before any work starts (#60)', () => {
   assert.throws(() => resolveOptions(parse(['-u', '--merge', 'handbook', 'a.md', 'b.md'])), combined);
   assert.throws(() => resolveOptions(parse(['--merge=handbook', '--update-md-toc', 'a.md'])), combined);
 });
+
+test('rejects an empty -s value instead of falling back to the default (#55)', (t) => {
+  const config = tempDir(t);
+  writeFile(config, 'default.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+
+  assert.throws(() => resolveOptions(parse(['-s', '', 'doc.md'])), /Empty -s\/--stylesheet value/);
+  assert.throws(() => resolveOptions(parse(['-s', '   ', 'doc.md'])), /Empty -s\/--stylesheet value/);
+});

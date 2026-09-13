@@ -13,6 +13,20 @@ import { classifyLines } from './markdown-scan';
 const MAX_INLINE_BYTES = 32 * 1024 * 1024;
 
 /**
+ * Formats a byte count for the oversize warning.
+ *
+ * Rounded to whole megabytes, `32 MiB + 1 byte` read as "32 MB" — the limit,
+ * not the file — which made the message look like it was naming the wrong
+ * number (#55). One decimal and the binary unit keep the two apart.
+ *
+ * @param bytes - Size in bytes.
+ * @returns The size as `<n.n> MiB`.
+ */
+function describeSize(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+/**
  * File extension to MIME type mapping used when building `data:` URIs.
  *
  * Only image types are listed: image references are the only asset targets
@@ -33,8 +47,17 @@ const MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
-/** Markdown inline image, captured up to (but excluding) the target itself. */
-const MD_IMAGE_RE = /(!\[[^\]]*\]\(\s*)(<[^>\n]*>|[^\s()]+)/g;
+/**
+ * Markdown inline image, captured up to (but excluding) the target itself.
+ *
+ * The bare (unbracketed) target allows **balanced** parentheses, which
+ * CommonMark permits and which Windows screenshots (`screenshot(1).png`)
+ * routinely contain: a target of `[^\s()]+` stopped at the first `(` and
+ * left the image unembedded while reporting a path that appears nowhere in
+ * the document (#55). Nesting is matched two levels deep, which covers real
+ * file names; anything deeper is left as written rather than mis-parsed.
+ */
+const MD_IMAGE_RE = /(!\[[^\]]*\]\(\s*)(<[^>\n]*>|(?:[^\s()]|\((?:[^\s()]|\([^\s()]*\))*\))+)/g;
 
 /** HTML `<img>` tag `src` attribute in quoted or bare form. */
 const HTML_IMG_RE = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
@@ -268,6 +291,11 @@ export function inlineAssets(context: ConversionContext): string[] {
 
   const markdown = fs.readFileSync(context.convertedMarkdown, 'utf8');
 
+  // One `data:` URI per file on disk: ten references to the same 30 MB image
+  // used to be read and base64-encoded ten times over (#55). Keyed by the
+  // resolved path, so two spellings of the same file share the entry.
+  const encoded = new Map<string, string>();
+
   const rewritten = transformImageTargets(markdown, (target) => {
     if (!target || isExternalTarget(target)) {
       return undefined;
@@ -287,14 +315,23 @@ export function inlineAssets(context: ConversionContext): string[] {
       return undefined;
     }
 
+    const cached = encoded.get(resolved);
+    if (cached) {
+      return cached;
+    }
+
     const { size } = fs.statSync(resolved);
     if (size > MAX_INLINE_BYTES) {
-      warn(`Asset too large to embed (${Math.round(size / 1024 / 1024)} MB), left unresolved: ${target}`);
+      warn(
+        `Asset too large to embed (${describeSize(size)}, limit ${MAX_INLINE_BYTES / 1024 / 1024} MiB), left unresolved: ${target}`,
+      );
       return undefined;
     }
 
     const mime = MIME_TYPES[path.extname(resolved).toLowerCase()] ?? 'application/octet-stream';
-    return `data:${mime};base64,${fs.readFileSync(resolved).toString('base64')}`;
+    const dataUri = `data:${mime};base64,${fs.readFileSync(resolved).toString('base64')}`;
+    encoded.set(resolved, dataUri);
+    return dataUri;
   });
 
   if (rewritten !== markdown) {

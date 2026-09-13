@@ -12,6 +12,7 @@ import {
   describeOutputCollisions,
   findOutputCollisions,
   isGeneratedHtml,
+  shortenStemForTemp,
   stampGeneratedHtml,
 } from '../steps/output-targets';
 
@@ -102,4 +103,24 @@ test('stamping is idempotent and recognised', () => {
   assert.equal(stampGeneratedHtml(once), once);
   assert.equal(isGeneratedHtml(once), true);
   assert.equal(isGeneratedHtml('<html><head><meta name="generator" content="other"></head></html>'), false);
+});
+
+test('shortenStemForTemp leaves an ordinary stem alone (#55)', () => {
+  assert.equal(shortenStemForTemp('My Report'), 'My Report');
+  assert.equal(shortenStemForTemp('a'.repeat(240)), 'a'.repeat(240));
+});
+
+test('shortenStemForTemp keeps the longest temp name inside NAME_MAX (#55)', () => {
+  const shortened = shortenStemForTemp('a'.repeat(250));
+
+  assert.equal(shortened, 'a'.repeat(240));
+  assert.equal(Buffer.byteLength(`${shortened}_converted.html`), 255);
+  assert.equal(Buffer.byteLength(`${shortened}_XXXXXX`), 247);
+});
+
+test('shortenStemForTemp counts bytes and never splits a code point (#55)', () => {
+  const shortened = shortenStemForTemp('ä'.repeat(200));
+
+  assert.equal(shortened, 'ä'.repeat(120));
+  assert.equal(Buffer.byteLength(shortened, 'utf8'), 240);
 });

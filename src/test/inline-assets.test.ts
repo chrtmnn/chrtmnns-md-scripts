@@ -236,3 +236,82 @@ test('inlineAssets picks the MIME type from the extension and falls back for unk
   assert.equal(output.includes('data:image/svg+xml;base64,'), true);
   assert.equal(output.includes('data:application/octet-stream;base64,'), true);
 });
+
+test('transformImageTargets keeps balanced parentheses in a target (#55)', () => {
+  const markdown = '![shot](images/screenshot(1).png) and ![deep](a(b(c)d).png)\n';
+
+  const output = transformImageTargets(markdown, (target) => `x/${target}`);
+
+  // The rewritten targets carry parentheses, so they come back bracketed.
+  assert.equal(output, '![shot](<x/images/screenshot(1).png>) and ![deep](<x/a(b(c)d).png>)\n');
+});
+
+test('inlineAssets embeds an asset whose name contains parentheses (#55)', (t) => {
+  const dir = tempDir(t);
+  const context = contextFor(dir, '![shot](images/screenshot(1).png)\n');
+  writePng(path.join(dir, 'source'), 'images/screenshot(1).png');
+
+  const warnings = inlineAssets(context);
+
+  assert.deepEqual(warnings, []);
+  assert.equal(
+    fs.readFileSync(context.convertedMarkdown, 'utf8'),
+    `![shot](data:image/png;base64,${PNG_BASE64})\n`,
+  );
+});
+
+test('inlineAssets reads an asset once however often it is referenced (#55)', (t) => {
+  const dir = tempDir(t);
+  const context = contextFor(dir, '![a](images/logo.png)\n\n![b](images/logo.png)\n\n<img src="images/logo.png">\n');
+  const asset = writePng(path.join(dir, 'source'), 'images/logo.png');
+
+  const realReadFileSync = fs.readFileSync;
+  let reads = 0;
+  t.mock.method(fs, 'readFileSync', (file: Parameters<typeof fs.readFileSync>[0], ...rest: unknown[]) => {
+    if (file === asset) {
+      reads += 1;
+    }
+    return (realReadFileSync as (...args: unknown[]) => unknown)(file, ...rest);
+  });
+
+  const warnings = inlineAssets(context);
+
+  assert.deepEqual(warnings, []);
+  assert.equal(reads, 1, 'the asset is base64-encoded once and reused');
+  assert.equal(
+    fs.readFileSync(context.convertedMarkdown, 'utf8').split(`base64,${PNG_BASE64}`).length - 1,
+    3,
+  );
+});
+
+test('inlineAssets embeds an asset of exactly the size limit (#55)', (t) => {
+  const dir = tempDir(t);
+  const context = contextFor(dir, '![big](big.png)\n');
+  const big = path.join(dir, 'source', 'big.png');
+  fs.writeFileSync(big, '');
+  fs.truncateSync(big, 32 * 1024 * 1024);
+
+  const warnings = inlineAssets(context);
+
+  assert.deepEqual(warnings, []);
+  assert.equal(fs.readFileSync(context.convertedMarkdown, 'utf8').startsWith('![big](data:image/png;base64,'), true);
+});
+
+test('inlineAssets reports one byte over the limit with the real size (#55)', (t) => {
+  const dir = tempDir(t);
+  const context = contextFor(dir, '![big](big.png)\n');
+  const big = path.join(dir, 'source', 'big.png');
+  fs.writeFileSync(big, '');
+  fs.truncateSync(big, 32 * 1024 * 1024 + 1);
+
+  const warnings = inlineAssets(context);
+
+  assert.deepEqual(warnings, ['Asset too large to embed (32.0 MiB, limit 32 MiB), left unresolved: big.png']);
+  assert.equal(fs.readFileSync(context.convertedMarkdown, 'utf8'), '![big](big.png)\n');
+});
+
+test('transformImageTargets rewrites an unquoted src attribute (#55)', () => {
+  const output = transformImageTargets('<img src=x.png>\n', (target) => `y/${target}`);
+
+  assert.equal(output, '<img src="y/x.png">\n');
+});

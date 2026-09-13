@@ -40,6 +40,45 @@ export const GENERATOR_MARKER = '<meta name="generator" content="md2pdf">';
 export const GENERATOR_MARKER_SCAN_BYTES = 64 * 1024;
 
 /**
+ * Longest single path component most filesystems accept, in bytes
+ * (`NAME_MAX` on Linux and macOS, the same limit in practice on NTFS).
+ */
+const MAX_NAME_BYTES = 255;
+
+/**
+ * Longest suffix appended to the shortened stem: `_converted.html` for the
+ * temp files, well past `_XXXXXX` for the `mkdtempSync` directory name.
+ */
+const LONGEST_TEMP_SUFFIX = '_converted.html'.length;
+
+/**
+ * Shortens a file stem so the temp directory and the temp files derived from
+ * it stay inside the filesystem's name limit.
+ *
+ * A 250-character source file name made `mkdtempSync` fail with a raw
+ * `ENAMETOOLONG` from Node, aborting the run with no readable message (#55).
+ * Only *temp* names are shortened; the output PDF keeps the full stem, since
+ * the source file proves that name fits.
+ *
+ * Truncation counts UTF-8 bytes, not characters, and never splits a code
+ * point — a stem of 200 umlauts is 400 bytes.
+ *
+ * @param stem - Source file name without its extension.
+ * @returns The stem, shortened when it would not fit.
+ */
+export function shortenStemForTemp(stem: string): string {
+  const limit = MAX_NAME_BYTES - LONGEST_TEMP_SUFFIX;
+  if (Buffer.byteLength(stem, 'utf8') <= limit) {
+    return stem;
+  }
+
+  const truncated = Buffer.from(stem, 'utf8').subarray(0, limit).toString('utf8');
+  // A partial code point at the cut decodes to U+FFFD; dropping it keeps the
+  // name a faithful prefix of the original.
+  return truncated.endsWith('\uFFFD') ? truncated.slice(0, -1) : truncated;
+}
+
+/**
  * Derives the output paths for a source file.
  *
  * `prepareWorkdir` and the collision check both use this, so the pre-flight

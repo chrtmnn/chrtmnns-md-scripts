@@ -148,8 +148,8 @@ export function findStylesheet(
  * @param locations - Directories to resolve against.
  * @param isFile - Reports whether a path is an existing file.
  * @returns The chosen stylesheet and its origin.
- * @throws When an explicit `-s` value matches nothing, including `-s default`
- *   in a checkout whose bundled stylesheet is missing.
+ * @throws When an explicit `-s` value is empty or matches nothing, including
+ *   `-s default` in a checkout whose bundled stylesheet is missing.
  */
 export function chooseStylesheet(
   value: string | undefined,
@@ -163,7 +163,13 @@ export function chooseStylesheet(
     return { path: bundledStylesheet, origin: 'bundled' };
   }
 
-  if (value) {
+  if (value !== undefined) {
+    if (value.trim() === '') {
+      // `-s ""` used to be falsy here and fell through to the personal or
+      // bundled default, so an empty value silently did nothing (#55).
+      throw new Error('Empty -s/--stylesheet value. Expected a stylesheet name or path.');
+    }
+
     return { path: findStylesheet(value, invocationDir, configDir, isFile), origin: 'option' };
   }
 

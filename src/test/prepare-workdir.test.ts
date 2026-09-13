@@ -83,3 +83,25 @@ test('creates the target directory so later steps can write into it', (t) => {
 
   assert.equal(fs.statSync(context.targetDir).isDirectory(), true);
 });
+
+test('a very long file name does not fail the run with ENAMETOOLONG (#55)', (t) => {
+  const dir = tempDir(t);
+  const stem = 'a'.repeat(250);
+  const file = writeFile(dir, `${stem}.md`, '# Doc\n');
+  const options = makeOptions({ tempRoot: path.join(dir, 'scratch') });
+
+  const context = prepareWorkdir(file, options)!;
+
+  assert.equal(fs.statSync(context.workdir).isDirectory(), true);
+  for (const generated of [context.workdir, context.convertedMarkdown, context.tempPdf, context.tempHtml]) {
+    assert.ok(
+      Buffer.byteLength(path.basename(generated)) <= 255,
+      `${path.basename(generated).length} bytes is past NAME_MAX`,
+    );
+  }
+  assert.equal(
+    comparablePath(context.outputPdf),
+    comparablePath(path.join(dir, `${stem}.pdf`)),
+    'the output keeps the full stem',
+  );
+});
