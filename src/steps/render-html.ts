@@ -1,4 +1,6 @@
+import fs from 'fs';
 import { ConversionContext } from '../types';
+import { stampGeneratedHtml } from './output-targets';
 import { runNpx } from './run-npx';
 
 /**
@@ -28,4 +30,10 @@ export function renderHtml(context: ConversionContext): void {
   }
 
   runNpx(args, { verbose: context.options.verbose });
+
+  // The marker lets a later run tell its own HTML apart from a hand-written
+  // file at the same path. A missing file is reported by copyOutput.
+  if (fs.existsSync(context.tempHtml)) {
+    fs.writeFileSync(context.tempHtml, stampGeneratedHtml(fs.readFileSync(context.tempHtml, 'utf8')), 'utf8');
+  }
 }
