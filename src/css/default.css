@@ -235,20 +235,27 @@ blockquote {
    Tables
    ========================= */
 
+/* No break-inside: avoid on table or tbody: Chromium pushes each level to a
+   fresh page before splitting it anyway, so a table longer than the rest of
+   the page left one blank page before its header and one after it. */
 table {
     width: 100%;
     border-collapse: collapse;
     margin: 1.2em 0;
     font-size: 0.95em;
+}
+
+/* Keep short tables (at most 5 body rows) on one page. A selector cannot
+   read a custom property, so the threshold is the literal in -n+5. */
+table:has(> tbody > tr:last-child:nth-child(-n+5)) {
     page-break-inside: avoid;
     break-inside: avoid;
 }
 
+/* break-inside: avoid is what makes Chromium repeat the header row on every
+   page with this stylesheet; table-header-group alone does not. */
 thead {
     display: table-header-group;
-}
-
-tbody {
     page-break-inside: avoid;
     break-inside: avoid;
 }
