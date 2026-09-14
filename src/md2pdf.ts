@@ -50,18 +50,27 @@ function formatError(error: unknown): string {
 }
 
 async function run(options: ConverterOptions): Promise<void> {
-  const { intro, log, outro, spinner } = await import('@clack/prompts');
+  const { intro, isTTY, log, outro, spinner } = await import('@clack/prompts');
+
+  // A spinner only makes sense on a terminal: piped into a file or a CI log,
+  // its cursor escapes (ESC[?25l) end up in the output, and `--verbose` wants
+  // a durable line per step rather than one that is overwritten (#59).
+  const interactive = isTTY(process.stdout) && !options.verbose;
 
   function runStep<T>(label: string, action: () => T): T {
-    if (options.verbose) {
-      log.info(label);
+    if (!interactive) {
+      if (options.verbose) {
+        log.info(label);
+      }
+
       try {
         const result = action();
-        log.success(label);
+        if (options.verbose) {
+          log.success(label);
+        }
         return result;
       } catch (error) {
-        // The spinner branch marks a failed step; without this the verbose
-        // output ended on the plain "started" line (#51).
+        // Without this the verbose output ended on the plain "started" line (#51).
         log.error(`${label} failed`);
         throw error;
       }
@@ -75,12 +84,63 @@ async function run(options: ConverterOptions): Promise<void> {
       step.stop(label);
       return result;
     } catch (error) {
-      step.stop(`${label} failed`);
+      step.error(`${label} failed`);
       throw error;
     }
   }
 
+  /**
+   * One spinner for a whole file, whose message names the step in progress.
+   *
+   * Seven persistent lines per file buried the warnings in a 30-file run
+   * (#59), so the steps share a single line that ends as `Created <pdf>`; the
+   * per-step lines come back with `--verbose`.
+   */
+  function fileProgress(name: string) {
+    const step = interactive ? spinner() : undefined;
+    step?.start(name);
+
+    return {
+      /** Runs one pipeline step under this file's spinner. */
+      run<T>(label: string, action: () => T): T {
+        if (options.verbose) {
+          log.info(`${name} · ${label}`);
+        }
+        step?.message(`${name} · ${label}`);
+
+        try {
+          const result = action();
+          if (options.verbose) {
+            log.success(`${name} · ${label}`);
+          }
+          return result;
+        } catch (error) {
+          if (!step) {
+            log.error(`${name} · ${label} failed`);
+          }
+          throw error;
+        }
+      },
+      /** Ends the file with a success message. */
+      done(message: string): void {
+        step ? step.stop(message) : log.success(message);
+      },
+      /** Ends the file with a failure message. */
+      failed(message: string): void {
+        step ? step.error(message) : log.error(message);
+      },
+      /** Ends the file with a neutral message, for a skipped file. */
+      skipped(message: string): void {
+        step ? step.cancel(message) : log.warn(message);
+      },
+    };
+  }
+
   intro('md2pdf');
+
+  // A retired `--css-var` name still works but is translated, which the user
+  // has to be told about to migrate the command line (#59).
+  options.cssVarWarnings.forEach((warning) => log.warn(warning));
 
   // A personal ~/.md2pdf/default.css replaces the bundled stylesheet without
   // any flag, so --verbose says which one is in use and why.
@@ -179,7 +239,7 @@ async function run(options: ConverterOptions): Promise<void> {
     }
 
     for (const file of filesToConvert) {
-      log.info(merged ? `${merged.mergedCount} documents merged` : path.resolve(file));
+      const progress = fileProgress(merged ? `${merged.mergedCount} documents merged` : path.basename(file));
 
       // Inside the try, so a failure here fails this file like any other step
       // instead of aborting the whole run, leaking the work directory and
@@ -187,9 +247,9 @@ async function run(options: ConverterOptions): Promise<void> {
       let context: ConversionContext | undefined;
 
       try {
-        context = runStep('Preparing workspace', () => prepareWorkdir(file, runOptions));
+        context = progress.run('Preparing workspace', () => prepareWorkdir(file, runOptions));
         if (!context) {
-          log.warn(`Skipped missing file: ${file}`);
+          progress.skipped(`Skipped missing file: ${file}`);
           failedCount++;
           continue;
         }
@@ -206,44 +266,48 @@ async function run(options: ConverterOptions): Promise<void> {
         assertOutputReplaceable(active);
         // `-u` only refreshes an existing marker block. A broken pair is
         // reported by runDoctoc, and a merged run cannot carry `-u`.
-        if (options.updateMdToc && scanDoctocMarkers(fs.readFileSync(active.sourceFile, 'utf8')).kind === 'none') {
-          log.warn(describeMissingMarkerBlock(active.sourceFile, options.forceDoctoc));
+        if (options.writeToc && scanDoctocMarkers(fs.readFileSync(active.sourceFile, 'utf8')).kind === 'none') {
+          log.warn(describeMissingMarkerBlock(active.sourceFile, options.toc === 'always'));
         }
         if (shouldRunDoctoc(options, active.sourceFile)) {
-          runStep('Table of contents', () => runDoctoc(active));
+          progress.run('Table of contents', () => runDoctoc(active));
         }
-        if (!merged) {
+        if (options.title) {
+          // An explicit title beats both the first heading and the name a
+          // merged run derives from `--merge` (#59).
+          active.docTitle = options.title;
+        } else if (!merged) {
           // A merged run keeps the `--merge` name as its document title,
           // which prepareWorkdir already derived from the merged file name.
-          runStep('Extracting document title', () => extractTitle(active));
+          progress.run('Extracting document title', () => extractTitle(active));
         }
         // `inputMarkdown` rather than the source file: that is what
         // renderMermaid reads, and doctoc may have replaced it with the temp
         // copy in between (#51).
         if (hasMermaidFences(active.inputMarkdown)) {
-          runStep('Rendering Mermaid diagrams', () => renderMermaid(active));
+          progress.run('Rendering Mermaid diagrams', () => renderMermaid(active));
         } else {
           // Wrapped like every other step, so it gets the same spinner and
           // failure marker instead of happening silently.
-          runStep('Preparing Markdown', () => fs.copyFileSync(active.inputMarkdown, active.convertedMarkdown));
+          progress.run('Preparing Markdown', () => fs.copyFileSync(active.inputMarkdown, active.convertedMarkdown));
         }
         // md-to-pdf renders from a server rooted at the work directory, so
         // the document's own assets have to be carried into the converted
         // Markdown before it runs.
-        runStep('Embedding assets', () => inlineAssets(active)).forEach((warning) => log.warn(warning));
-        runStep('Rendering PDF', () => renderPdf(active));
-        if (options.debug) {
-          runStep('Rendering debug HTML', () => renderHtml(active));
+        progress.run('Embedding assets', () => inlineAssets(active)).forEach((warning) => log.warn(warning));
+        progress.run('Rendering PDF', () => renderPdf(active));
+        if (options.html) {
+          progress.run('Rendering HTML', () => renderHtml(active));
         }
-        runStep('Copying output', () => copyOutput(active));
+        progress.run('Copying output', () => copyOutput(active));
 
-        log.success(`Created ${active.outputPdf}`);
-        if (options.debug) {
+        progress.done(`Created ${active.outputPdf}`);
+        if (options.html) {
           log.success(`Created ${active.outputHtml}`);
         }
         convertedCount++;
       } catch (error) {
-        log.error(formatError(error));
+        progress.failed(formatError(error));
         failedCount++;
       } finally {
         if (context) {

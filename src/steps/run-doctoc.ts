@@ -23,7 +23,11 @@ import { relocateTocBeforeFirstH2 } from './toc-placement';
  * @returns `true` when doctoc must process the file, `false` otherwise.
  */
 export function shouldRunDoctoc(options: ConverterOptions, sourceFile: string): boolean {
-  return options.forceDoctoc || scanDoctocMarkers(fs.readFileSync(sourceFile, 'utf8')).kind !== 'none';
+  if (options.toc === 'never') {
+    return false;
+  }
+
+  return options.toc === 'always' || scanDoctocMarkers(fs.readFileSync(sourceFile, 'utf8')).kind !== 'none';
 }
 
 /**
@@ -78,7 +82,7 @@ export function runDoctoc(context: ConversionContext): void {
   refreshed = unmaskDocumentedMarkers(refreshed);
   fs.writeFileSync(context.inputMarkdown, refreshed);
 
-  if (context.options.updateMdToc && markers.kind === 'pair' && refreshed !== source) {
+  if (context.options.writeToc && markers.kind === 'pair' && refreshed !== source) {
     if (!isTocOnlyRefresh(source, refreshed)) {
       throw new Error(
         `${context.sourceFile}: doctoc changed content outside the table of contents block; the file was left unchanged.`,

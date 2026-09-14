@@ -17,7 +17,7 @@ import { GENERATOR_MARKER_SCAN_BYTES, isGeneratedHtml } from './output-targets';
  * @param context - Mutable conversion state for the current source file.
  */
 export function assertOutputReplaceable(context: ConversionContext): void {
-  if (!context.options.debug || !fs.existsSync(context.outputHtml)) {
+  if (!context.options.html || !fs.existsSync(context.outputHtml)) {
     return;
   }
 
@@ -49,7 +49,7 @@ export function copyOutput(context: ConversionContext): void {
   }
   outputs.push({ from: context.tempPdf, to: context.outputPdf });
 
-  if (context.options.debug) {
+  if (context.options.html) {
     if (!fs.existsSync(context.tempHtml)) {
       throw new Error(`HTML generation failed. Expected: ${context.tempHtml}`);
     }

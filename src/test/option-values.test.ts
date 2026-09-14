@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCssVars, parseMergeName } from '../steps/option-values';
+import { parseCssVars, parseMergeName, translateLegacyCssVars } from '../steps/option-values';
 
 test('parseCssVars normalises names to a leading double dash', () => {
   assert.deepEqual(parseCssVars(['font-text=Aptos']), [{ name: '--font-text', value: 'Aptos' }]);
@@ -89,4 +89,33 @@ test('parseMergeName rejects characters that are illegal in a file name', () => 
 test('parseCssVars rejects a value carrying a comment delimiter (#46)', () => {
   assert.throws(() => parseCssVars(['page-size=A4 /*']), /Invalid CSS variable value/);
   assert.throws(() => parseCssVars(['page-size=A4 */']), /Invalid CSS variable value/);
+});
+
+test('translateLegacyCssVars rewrites a retired page-break name (#59)', () => {
+  const { cssVars, warnings } = translateLegacyCssVars([
+    { name: '--heading-page-break-before', value: 'always' },
+    { name: '--first-heading-page-break-before', value: 'auto' },
+    { name: '--document-page-break-before', value: 'always' },
+  ]);
+
+  assert.deepEqual(cssVars, [
+    { name: '--heading-break-before', value: 'page' },
+    { name: '--first-heading-break-before', value: 'auto' },
+    { name: '--document-break-before', value: 'page' },
+  ]);
+  assert.equal(warnings.length, 3);
+  assert.match(warnings[0], /--heading-page-break-before is deprecated/);
+});
+
+test('translateLegacyCssVars leaves a current name untouched (#59)', () => {
+  const { cssVars, warnings } = translateLegacyCssVars([
+    { name: '--heading-break-before', value: 'page' },
+    { name: '--font-text', value: 'Arial' },
+  ]);
+
+  assert.deepEqual(cssVars, [
+    { name: '--heading-break-before', value: 'page' },
+    { name: '--font-text', value: 'Arial' },
+  ]);
+  assert.deepEqual(warnings, []);
 });

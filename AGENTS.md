@@ -100,9 +100,26 @@ The project is a CLI toolsuite for converting Markdown to PDF with Mermaid diagr
 
 ### Pipeline model (`src/md2pdf.ts`)
 
-`md2pdf` is the main entry point. The command line itself is declared in `src/cli-program.ts` (`createProgram()`), so `resolve-options.test.ts` parses against the real declarations instead of a copy; `md2pdf.ts` parses `process.argv` as soon as it is imported and is therefore never loaded by a test. Option combinations that cannot be honoured are rejected before any work starts (#60): `-p` declares a Commander conflict with `-r`, and `resolveOptions` throws for `-u` together with `--merge`.
+`md2pdf` is the main entry point. The command line itself is declared in `src/cli-program.ts` (`createProgram()`), so `resolve-options.test.ts` parses against the real declarations instead of a copy; `md2pdf.ts` parses `process.argv` as soon as it is imported and is therefore never loaded by a test. Option combinations that cannot be honoured are rejected before any work starts (#60): `--temp-in-output` declares a Commander conflict with `--temp-root` (both short aliases included), and `resolveOptions` throws for `-u` together with `--merge`.
 
-After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / per-step spinner / `outro` UI. Each step is wrapped by a local `runStep(label, action)` helper that drives a spinner (or `log.info`/`log.success` when `--verbose` is set).
+Options are named after what the user wants rather than after the tool that implements it (#59). Every previous name is still accepted as a **hidden** option, so existing command lines keep working:
+
+| Name | Previous name | Note |
+|---|---|---|
+| `--toc` / `--no-toc` | `-f`, `--force-doctoc` | `--no-toc` is new: it switches the automatic refresh off |
+| `-u, --write-toc` | `--update-md-toc` | |
+| `--html` | `--debug` | `--debug` now means `--html --keep-temp --verbose` |
+| `--keep-temp` / `--temp-root` / `--temp-in-output` | `-k` / `-r` / `-p` | the single-letter slots are no longer advertised |
+| `--title <text>` | — | new: the PDF title, instead of the first heading or the `--merge` name |
+| `-V, --version` | — | new |
+
+Commander cannot give one option two long names, so each retired **short** flag is declared as its own hidden option with an `-alias` long name (`-r, --temp-root-alias`); `resolveOptions` folds the pair back together. `--toc`/`--no-toc` is a tri-state Commander reports as `undefined`/`true`/`false`, which becomes `ConverterOptions.toc` (`auto` / `always` / `never`).
+
+Commander 12 has no `Option.helpGroup()` (v14 added it), so `--help` renders Commander's usage and arguments, then a grouped option block built by `formatOptionGroups` from `HELP_GROUPS` in `cli-program.ts` (`visibleOptions` is emptied so the flat list is not printed twice). `cli-program.test.ts` asserts that every visible option has exactly one row in that block, which is what stops a newly added option from disappearing from the help.
+
+After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / progress / `outro` UI. The run-level steps go through `runStep(label, action)`; each **file** gets a single spinner from `fileProgress(name)` whose message names the step in progress (`README.md · Rendering PDF`) and which stops as `Created <pdf>` (#59). Seven persistent lines per file used to bury the warnings of a 30-file run.
+
+The spinner is used only when `isTTY(process.stdout)` holds and `--verbose` is off: piped into a file or a CI log its cursor escapes (`ESC[?25l`) would end up in the output, and `--verbose` wants a durable line per step instead of one that is overwritten. A non-interactive run therefore prints the intro, whatever warnings and results there are, and the outro — nothing else.
 
 Each per-file step is a function that accepts a `ConversionContext` and **mutates it in place**. These steps return `void`, except `inlineAssets`, which returns the non-fatal warnings the caller surfaces via `log.warn`. Steps run in order; `cleanup` runs in a `finally` block unconditionally.
 
@@ -122,7 +139,7 @@ resolveInputs → [findOutputCollisions | mergeMarkdown] → resolveStylesheet �
 
 Whether Mermaid runs is decided on `context.inputMarkdown` — what `renderMermaid` actually reads — rather than on the source file, which `runDoctoc` may have replaced with the temp copy in between (#51). The plain copy taken when there are no Mermaid fences goes through `runStep` like every other step, so it has a label and a failure marker.
 
-`renderHtml` only runs when `--debug` is set, emitting a standalone HTML file alongside the PDF. `findOutputCollisions` runs for non-merged runs only; both it and `assertOutputReplaceable` are described under *Output writing*.
+`renderHtml` only runs when `--html` is set (`--debug` implies it), emitting a standalone HTML file alongside the PDF. `--title` short-circuits `extractTitle`, since an explicit title beats both the first heading and the name a merged run derives from `--merge`. `findOutputCollisions` runs for non-merged runs only; both it and `assertOutputReplaceable` are described under *Output writing*.
 
 All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContext`, `CssVarOverride`) are in `src/types.ts`.
 
@@ -136,7 +153,7 @@ All steps live in `src/steps/`. The types (`ConverterOptions`, `ConversionContex
 | `convertedMarkdown` | `prepareWorkdir` | Output of mermaid-cli, input to md-to-pdf |
 | `docTitle` | `extractTitle` | `--document-title` passed to md-to-pdf |
 | `effectiveStylesheet` | `resolveStylesheet` (assigned in `md2pdf.ts`, once per run) | Final CSS path (the base stylesheet as-is, or its self-contained copy with inlined references and overrides) |
-| `tempHtml` / `outputHtml` | `prepareWorkdir` | Debug HTML paths; always set, but the files at those paths are only written by `renderHtml` and `copyOutput` when `--debug` is set |
+| `tempHtml` / `outputHtml` | `prepareWorkdir` | HTML paths; always set, but the files at those paths are only written by `renderHtml` and `copyOutput` when `--html` is set |
 
 ### Argument expansion (`src/steps/resolve-inputs.ts`)
 
@@ -155,29 +172,29 @@ Positional arguments may be files or directories. A file positional that does no
 Three guards keep a run from destroying files it did not mean to replace (#45):
 
 - **Collisions are detected before the first write.** `deriveOutputPaths` is the only derivation of `targetDir` / `outputPdf` / `outputHtml`. `prepareWorkdir` uses it, and `md2pdf.ts` runs `findOutputCollisions` over the resolved inputs that exist before the loop starts, so the check cannot disagree with the paths that are actually written. Any collision aborts the whole run with `describeOutputCollisions`, nothing converted, exit 1. Only the PDF path is compared, since the HTML shares stem and directory; keys are case-insensitive on Windows only, like the input deduplication. Merged runs write a single output and skip the check.
-- **Outputs are swapped in, never copied over.** `copyOutput` first checks that every temp output exists, then stages each one as `.<name>.<pid>-<random>.tmp` in the target's own directory (`COPYFILE_EXCL`, so no rename crosses a filesystem) and `renameSync`s it over the target. The `finally` removes whatever a failure left staged. Copying straight to the target would not do: `copyFileSync` truncates the destination before the copy can fail. With `--debug` the two renames are not one transaction — a failure on the HTML rename leaves the new PDF next to the previous HTML. A killed process can leave a `.tmp` file behind.
-- **A debug HTML md2pdf did not write is never replaced.** `renderHtml` stamps `GENERATOR_MARKER` (`<meta name="generator" content="md2pdf">`) right after the opening `<head>` tag of md-to-pdf's output. `assertOutputReplaceable` throws for an existing `outputHtml` that is not a regular file or lacks the marker in its first 64 KiB. `md2pdf.ts` calls it first thing in each file's `try` — before `-u` can write back to the source and before anything renders — and `copyOutput` calls it again right before staging. A PDF at the output path is replaced without such a check, since regenerating it is the tool's job.
+- **Outputs are swapped in, never copied over.** `copyOutput` first checks that every temp output exists, then stages each one as `.<name>.<pid>-<random>.tmp` in the target's own directory (`COPYFILE_EXCL`, so no rename crosses a filesystem) and `renameSync`s it over the target. The `finally` removes whatever a failure left staged. Copying straight to the target would not do: `copyFileSync` truncates the destination before the copy can fail. With `--html` the two renames are not one transaction — a failure on the HTML rename leaves the new PDF next to the previous HTML. A killed process can leave a `.tmp` file behind.
+- **An HTML file md2pdf did not write is never replaced.** `renderHtml` stamps `GENERATOR_MARKER` (`<meta name="generator" content="md2pdf">`) right after the opening `<head>` tag of md-to-pdf's output. `assertOutputReplaceable` throws for an existing `outputHtml` that is not a regular file or lacks the marker in its first 64 KiB. `md2pdf.ts` calls it first thing in each file's `try` — before `-u` can write back to the source and before anything renders — and `copyOutput` calls it again right before staging. A PDF at the output path is replaced without such a check, since regenerating it is the tool's job.
 
 ### Merging (`src/steps/merge-markdown.ts`)
 
-`--merge <name>` combines every resolved Markdown file into a single PDF. No PDF-merging library is involved and no dependency was added: the Markdown is concatenated **before** rendering and the existing pipeline then runs once over the concatenated file, so every other flag keeps working unchanged and `--force-doctoc` produces one table of contents spanning all documents.
+`--merge <name>` combines every resolved Markdown file into a single PDF. No PDF-merging library is involved and no dependency was added: the Markdown is concatenated **before** rendering and the existing pipeline then runs once over the concatenated file, so every other flag keeps working unchanged and `--toc` produces one table of contents spanning all documents.
 
-- Documents are separated by a `<div class="document-break"></div>` block with blank lines on both sides, so a file without a trailing newline cannot glue its last line onto the next document. A document with no content left — an empty file, or one holding only frontmatter — contributes no section and therefore no break, which used to produce two consecutive breaks and a blank page (#49). The matching `.document-break` rule is in `src/css/default.css`, driven by the `--document-page-break-before` / `--document-break-before` custom properties. Headings cannot be used for the break because they default to `break-before: auto`.
+- Documents are separated by a `<div class="document-break"></div>` block with blank lines on both sides, so a file without a trailing newline cannot glue its last line onto the next document. A document with no content left — an empty file, or one holding only frontmatter — contributes no section and therefore no break, which used to produce two consecutive breaks and a blank page (#49). The matching `.document-break` rule is in `src/css/default.css`, driven by the `--document-break-before` custom property. Headings cannot be used for the break because they default to `break-before: auto`.
 - The merged file is written as `<merge-name>.md` inside a randomly-named `merge_XXXXXX` temp directory (`fs.mkdtempSync`), so `prepareWorkdir` derives the PDF name, the temp file names, and the document title from the *file's* name. The document title is therefore the `--merge` name; `extractTitle` is skipped for merged runs.
 - The target directory is `-o` when given, otherwise the common ancestor directory of the resolved inputs. That computation returns an *absolute* path at every root: `''` becomes the POSIX root and a bare `C:` becomes `C:\`, since `C:` alone is drive-*relative* and would have put the merged PDF into the working directory (#50). A UNC prefix without a share (`\\server`) counts as no common root. `md2pdf.ts` pins it by passing `{ ...options, outputDir: targetDir }` into `prepareWorkdir`, because the merged file itself lives in a temp directory.
 - The merge temp directory follows the same `-r` / `-p` placement rules as the conversion work directory and is removed unless `-k` is set.
-- YAML frontmatter is kept only on the **first** document (#49). md-to-pdf parses a block only at the start of the file, so in any later document the same block is ordinary content and renders as a horizontal rule plus an invented heading carrying the raw YAML, which `--force-doctoc` then lists in the table of contents. Each dropped block is counted and reported in one warning.
+- YAML frontmatter is kept only on the **first** document (#49). md-to-pdf parses a block only at the start of the file, so in any later document the same block is ordinary content and renders as a horizontal rule plus an invented heading carrying the raw YAML, which `--toc` then lists in the table of contents. Each dropped block is counted and reported in one warning.
 - Relative **image** targets are rewritten to absolute paths as each document is read, against that document's own directory. Concatenation is the last point at which a section's origin is still known, and `inlineAssets` embeds those absolute paths afterwards. Two documents in different directories can therefore both use `images/logo.png` and each still gets its own file.
 - **Limitation**: relative **link** targets are not rewritten. Links are not fetched during rendering, so a relative link between merged documents stays relative and may not point anywhere useful in the PDF. The warning emitted when the inputs span more than one directory says so.
 - The pure parts — the common-ancestor computation, the frontmatter removal and the concatenation itself — live in `src/steps/merge-assembly.ts`; `merge-markdown.ts` keeps the filesystem work. `stripBom` moved to `markdown-scan.ts` with #48, since every line-oriented scan needs it.
 
 ### Doctoc auto-detection (`src/steps/run-doctoc.ts`)
 
-`runDoctoc` runs automatically when the source file contains a **genuine** doctoc START marker: a line that opens an HTML comment block with `<!-- START doctoc `, outside fenced code and other comment blocks. The `-f`/`--force-doctoc` flag forces a run even when no markers are present. doctoc itself only ever runs on the temp copy. The `-u`/`--update-md-toc` flag writes the refreshed copy back to the original Markdown file when the source has a genuine marker pair, and only if nothing outside the TOC block changed (`isTocOnlyRefresh`). For a source whose scan is `none`, `-u` has no effect, so `md2pdf.ts` warns with `describeMissingMarkerBlock` before the doctoc step — also under `-f`, which only puts the TOC into the PDF. `-u` is rejected together with `--merge`: the pipeline would run over the concatenated temp file, and the write-back would refresh that copy instead of any source.
+`runDoctoc` runs automatically when the source file contains a **genuine** doctoc START marker: a line that opens an HTML comment block with `<!-- START doctoc `, outside fenced code and other comment blocks. The `--toc` flag (previously `-f`/`--force-doctoc`) forces a run even when no markers are present, and `--no-toc` switches the automatic run off entirely. doctoc itself only ever runs on the temp copy. The `-u`/`--write-toc` flag writes the refreshed copy back to the original Markdown file when the source has a genuine marker pair, and only if nothing outside the TOC block changed (`isTocOnlyRefresh`). For a source whose scan is `none`, `-u` has no effect, so `md2pdf.ts` warns with `describeMissingMarkerBlock` before the doctoc step — also under `--toc`, which only puts the TOC into the PDF. `-u` is rejected together with `--merge`: the pipeline would run over the concatenated temp file, and the write-back would refresh that copy instead of any source.
 
 doctoc 2.3.0 is not fence-aware: it takes the first line matching `<!-- START doctoc ` anywhere and, without an END marker after it, replaces everything to the end of the file (#44). The pure rules in `src/steps/doctoc-markers.ts` guard against that. `scanDoctocMarkers` classifies the source as `none` / `pair` / `broken`. `maskDocumentedMarkers` hides every non-genuine marker occurrence (fenced, inline or indented code, comments) from doctoc by inserting U+E000 after its `<!--`, and `unmaskDocumentedMarkers` restores them after the run, so documented examples survive byte-identically. A genuine START marker without a following END marker (`broken`) fails that file before doctoc runs.
 
-When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--force-doctoc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings that do not render are ignored when locating the target position (see *Markdown scanning*). If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. The relocation rules themselves are a pure string-to-string transformation in `src/steps/toc-placement.ts` (`relocateTocBeforeFirstH2`); `run-doctoc.ts` applies them to the temp copy while documented markers are still masked, so an example can never be mistaken for the generated block.
+When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--toc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings that do not render are ignored when locating the target position (see *Markdown scanning*). If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. The relocation rules themselves are a pure string-to-string transformation in `src/steps/toc-placement.ts` (`relocateTocBeforeFirstH2`); `run-doctoc.ts` applies them to the temp copy while documented markers are still masked, so an example can never be mistaken for the generated block.
 
 ### Markdown scanning (`src/steps/markdown-scan.ts`)
 
@@ -220,7 +237,7 @@ Because the renderer only sees the work directory, a relative image reference in
 - A bare Markdown target may contain **balanced** parentheses, two levels deep (`screenshot(1).png`, `a(b(c)d).png`), which CommonMark allows and Windows screenshots produce (#55). Deeper nesting is left as written.
 - Each asset is read and base64-encoded once per run and reused for every further reference to the same resolved path (#55).
 
-A side effect worth knowing: the `--debug` HTML is now self-contained, so it renders correctly even when `-o` puts it somewhere other than the source directory.
+A side effect worth knowing: the `--html` output is now self-contained, so it renders correctly even when `-o` puts it somewhere other than the source directory.
 
 ### Stylesheet lookup (`src/steps/stylesheet-lookup.ts`)
 
@@ -287,19 +304,18 @@ Two pre-existing gaps that the hoisting does **not** close, because the `@import
 
 | Variable | Default | Effect |
 |---|---|---|
-| `--heading-page-break-before` | `auto` | Page break before h1/h2 |
-| `--heading-break-before` | `auto` | Same, modern syntax |
-| `--first-heading-page-break-before` | `auto` | Suppresses break before the first h1/h2 |
-| `--first-heading-break-before` | `auto` | Same, modern syntax |
+| `--heading-break-before` | `auto` | Page break before h1/h2 |
+| `--first-heading-break-before` | `auto` | Suppresses the break before the first h1/h2 |
 | `--font-text` | `"Aptos"` | Body font |
 | `--font-code` | `"JetBrains Mono", "Fira Code"` | Code font |
 | `--page-margin-top` / `-right` / `-bottom` / `-left` | `1.6cm` / `1.6cm` / `1.6cm` / `2.4cm` | Individual page margins (A4) |
 | `--page-margin` | composed from the four individual margins | Shorthand to set all four margins at once |
 | `--page-size` | `A4` | `@page` size, e.g. `A5`, `letter`, `A4 landscape` |
-| `--document-page-break-before` | `always` | Page break before each document combined with `--merge` |
-| `--document-break-before` | `page` | Same, modern syntax |
+| `--document-break-before` | `page` | Page break before each document combined with `--merge` |
 
-To enable per-heading page breaks: `--css-var heading-page-break-before=always --css-var heading-break-before=page`.
+To enable per-heading page breaks: `--css-var heading-break-before=page`.
+
+One variable per concept since #59: `default.css` used to define a legacy `page-break-before` and a modern `break-before` property per concept, so a break took two flags that had to agree. Chromium — the only renderer involved — honours `break-before`, so the legacy properties are gone. The retired names are still accepted for a transition period: `translateLegacyCssVars` (`option-values.ts`) rewrites them, mapping the value `always` to `page`, and each translation is reported as a warning through `ConverterOptions.cssVarWarnings`, which `md2pdf.ts` prints.
 
 ### External tool invocation
 
@@ -325,7 +341,7 @@ Mermaid diagrams render to SVG by default. The `--png` flag switches mermaid-cli
 
 `bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to `pnpm --silent md2pdf`. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `scripts/install.ps1`; remove via `scripts/uninstall.ps1`.
 
-The wrapper classifies each CLI argument before forwarding it: path options (`-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`-s`, `--css-var`, `--merge`, and their long forms) have their value forwarded verbatim, in both the space-separated and the `--option=value` inline form; flags and positional arguments are resolved as paths or passed as-is. Positional arguments are resolved to absolute paths whether they are files or directories.
+The wrapper classifies each CLI argument before forwarding it: path options (`-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`-s`, `--css-var`, `--merge`, `--title`, and their long forms) have their value forwarded verbatim, in both the space-separated and the `--option=value` inline form; flags and positional arguments are resolved as paths or passed as-is. Positional arguments are resolved to absolute paths whether they are files or directories.
 
 `-s/--stylesheet` is a passthrough option because its value may be a bare name from `~/.md2pdf` (see *Stylesheet lookup*), which only `md2pdf` itself can tell apart from a path. Instead of resolving it, the wrapper exports the caller's directory as `MD2PDF_INVOCATION_DIR` for the duration of the call and restores the previous value in its `finally` block: a script run from an interactive PowerShell shares that session's environment, and a stale value would redirect later direct `pnpm md2pdf` runs.
 

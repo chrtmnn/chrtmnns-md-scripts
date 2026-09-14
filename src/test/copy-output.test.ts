@@ -24,7 +24,7 @@ function fixture(t: TestContext, debug = false) {
   fs.mkdirSync(workdir);
   fs.mkdirSync(targetDir);
 
-  const context = makeContext({ sourceFile: source, workdir, targetDir, options: makeOptions({ debug }) });
+  const context = makeContext({ sourceFile: source, workdir, targetDir, options: makeOptions({ html: debug }) });
   return { context, targetDir };
 }
 
