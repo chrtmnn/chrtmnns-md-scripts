@@ -1,0 +1,10 @@
+{
+  // The published build (#56): everything under src/ except the tests.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The shebang of dist/md2pdf.js must end in LF, or `/usr/bin/env` looks
+    // for a binary called "node\r" on Unix.
+    "newLine": "lf"
+  },
+  "exclude": ["src/test/**"]
+}

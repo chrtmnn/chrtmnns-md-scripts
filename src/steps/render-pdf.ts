@@ -1,6 +1,6 @@
 import path from 'path';
 import { ConversionContext } from '../types';
-import { runNpx } from './run-npx';
+import { runTool } from './run-tool';
 
 /**
  * md-to-pdf config file that sets `pdf_options.preferCSSPageSize`, so the
@@ -28,7 +28,6 @@ const MD_TO_PDF_CONFIG = path.resolve(__dirname, '..', 'config', 'md-to-pdf.conf
  */
 export function renderPdf(context: ConversionContext): void {
   const args = [
-    context.options.packages.mdToPdf,
     context.convertedMarkdown,
     '--basedir',
     context.workdir,
@@ -44,5 +43,5 @@ export function renderPdf(context: ConversionContext): void {
     args.push('--stylesheet', context.effectiveStylesheet);
   }
 
-  runNpx(args, { verbose: context.options.verbose });
+  runTool('mdToPdf', args, context.options);
 }

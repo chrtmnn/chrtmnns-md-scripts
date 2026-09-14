@@ -15,13 +15,6 @@ import { StylesheetOrigin } from '../types';
 export const CONFIG_DIR_ENV = 'MD2PDF_CONFIG_DIR';
 
 /**
- * Directory the user called `md2pdf` from. Set by the global wrapper, which
- * runs `pnpm` from the repository root, so `process.cwd()` is not the
- * caller's directory there.
- */
-export const INVOCATION_DIR_ENV = 'MD2PDF_INVOCATION_DIR';
-
-/**
  * Reserved `-s` value that always selects the bundled stylesheet, so a single
  * run can ignore a personal `<config dir>/default.css` without naming the
  * bundled file's path, which differs per machine. Matched exactly: neither
@@ -42,7 +35,7 @@ export type StylesheetLocations = {
   invocationDir: string;
   /** Per-user config directory, see {@link configDirectory}. */
   configDir: string;
-  /** Absolute path of the bundled `src/css/default.css`. */
+  /** Absolute path of the bundled `css/default.css` next to the modules. */
   bundledStylesheet: string;
 };
 

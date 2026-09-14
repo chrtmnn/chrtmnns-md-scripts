@@ -1,0 +1,21 @@
+version: 2
+
+updates:
+  # The direct dependencies are pinned to exact versions, because a user's
+  # `npm i -g` never sees pnpm-lock.yaml (#56). Dependabot keeps those pins
+  # moving; the cooldown keeps a freshly published — possibly compromised —
+  # release out of the first week.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # The workflows pin every action to a commit SHA.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

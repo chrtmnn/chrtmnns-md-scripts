@@ -88,8 +88,8 @@ export function writePng(dir: string, relativePath: string): string {
 /**
  * Builds a complete {@link ConverterOptions} value with harmless defaults.
  *
- * The package selectors are set to the production defaults; no test in this
- * suite reaches a step that actually spawns `npx`.
+ * No npx override is set; no test in this suite reaches a step that spawns a
+ * conversion tool.
  *
  * @param overrides - Fields to override.
  * @returns Converter options usable by any step under test.
@@ -111,11 +111,7 @@ export function makeOptions(overrides: Partial<ConverterOptions> = {}): Converte
     png: false,
     recursive: false,
     merge: undefined,
-    packages: {
-      doctoc: 'doctoc@2.3.0',
-      mermaidCli: '@mermaid-js/mermaid-cli@11.12.0',
-      mdToPdf: 'md-to-pdf@5.2.5',
-    },
+    packageOverrides: {},
     ...overrides,
   };
 }

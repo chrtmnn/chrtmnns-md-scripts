@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { ConversionContext } from '../types';
 import { stampGeneratedHtml } from './output-targets';
-import { runNpx } from './run-npx';
+import { runTool } from './run-tool';
 
 /**
  * Renders the converted Markdown to a standalone HTML file for inspection.
@@ -16,7 +16,6 @@ import { runNpx } from './run-npx';
  */
 export function renderHtml(context: ConversionContext): void {
   const args = [
-    context.options.packages.mdToPdf,
     context.convertedMarkdown,
     '--basedir',
     context.workdir,
@@ -31,7 +30,7 @@ export function renderHtml(context: ConversionContext): void {
     args.push('--stylesheet', context.effectiveStylesheet);
   }
 
-  runNpx(args, { verbose: context.options.verbose });
+  runTool('mdToPdf', args, context.options);
 
   // The marker lets a later run tell its own HTML apart from a hand-written
   // file at the same path. A missing file is reported by copyOutput.

@@ -1,12 +1,15 @@
 /**
  * Pure rules behind the doctoc step's data-loss protection (#44).
  *
- * doctoc 2.3.0 finds its markers with a plain per-line regex that knows
+ * doctoc up to 2.3.0 found its markers with a plain per-line regex that knew
  * nothing about code fences, inline code or HTML comments, and
- * `update-section` then replaces everything from the first START match to the
- * first END match — or to the end of the file when there is no END. A document
- * that merely *documents* the marker (in a fence, or in backticks) would lose
- * everything after the example.
+ * `update-section` then replaced everything from the first START match to the
+ * first END match — or to the end of the file when there was no END. A
+ * document that merely *documented* the marker (in a fence, or in backticks)
+ * lost everything after the example. doctoc 2.5, the version md2pdf installs,
+ * only matches markers in HTML nodes of the parsed document. These rules stay:
+ * `DOCTOC_PKG` can still select an older doctoc, and a broken marker pair
+ * deserves an error rather than whatever doctoc makes of it.
  *
  * This module tells genuine markers from documented ones, hides the documented
  * ones from doctoc for the duration of a run, and verifies a refresh before

@@ -3,12 +3,12 @@
  * mermaid-cli or md-to-pdf run may take before it is ended.
  *
  * The spawning itself is not covered — the suite must stay fast and must not
- * need the network or Chromium.
+ * need Chromium. `pnpm pack:smoke` runs the real tools (#56).
  */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveToolTimeout } from '../steps/run-npx';
+import { resolveToolTimeout } from '../steps/run-tool';
 
 test('resolveToolTimeout defaults to ten minutes and honours the override (#51)', () => {
   assert.equal(resolveToolTimeout({}), 10 * 60 * 1000);

@@ -6,7 +6,7 @@ This file provides guidance to AI Agents when working with code in this reposito
 
 `main` stays in a runnable state. Every change goes through a short-lived branch.
 
-**Branch naming**: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `refactor/<topic>`.
+**Branch naming**: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `refactor/<topic>`, `release/v<x.y.z>`.
 
 **Per change**:
 
@@ -14,15 +14,27 @@ This file provides guidance to AI Agents when working with code in this reposito
 2. Commit work in focused commits (see git-commit skill for message policy)
 3. `git push -u origin feat/<topic>`
 4. `gh pr create` — the template prompts for what / why / verification
-5. Wait for the `typecheck` and `test` GitHub Action checks to pass
+5. Wait for the `typecheck`, `test` and `package` GitHub Action checks to pass
 6. Merge via squash on GitHub
 7. `git checkout main && git pull && git branch -d feat/<topic>`
 
 **Per release**:
 
-1. Bump `version` in `package.json` on `main`
-2. `git tag -a v<x.y.z> -m "<summary>"`
-3. `git push --tags`
+A release is a change like any other up to the tag — the version bump goes through a branch and a pull request, and only the tag is created on `main`.
+
+1. `git checkout -b release/v<x.y.z>`, then `npm version <x.y.z> --no-git-tag-version` to bump `version` in `package.json`, and commit it
+2. Push, open the pull request and merge it as under *Per change*, then `git checkout main && git pull`
+3. `git tag -a v<x.y.z> -m "<summary>"` on the merged commit — the `release` workflow refuses a tag that does not match `version` or points outside `main`
+4. `git push origin v<x.y.z>` — only this tag, not `--tags`, so no stray local tag starts a release
+5. Approve the `publish` job of the `release` workflow run in the `npm` environment. It publishes the tarball the `verify` job built, tested and smoke-tested; nothing is built during the publish itself (see *Packaging and release*).
+
+**One-time npm setup** (#56) — none of this lives in the repository:
+
+1. An npm account with 2FA, preferably a security key. The package is published under its `@chrtmnn` user scope.
+2. Publish the first version by hand, because a Trusted Publisher can only be attached to an existing package: in a fresh clone at the merged release commit on `main` (steps 1–3 of *Per release*), `pnpm install --frozen-lockfile`, then `npm publish --access public` with the 2FA prompt. A fresh clone matters: npm packs every `README.*` regardless of `files`, so a local `README.pdf` would be published. Then push the tag and reject the `publish` approval of its run, since that version already exists.
+3. On npmjs.com, add a Trusted Publisher for `chrtmnn/chrtmnns-md-scripts` with workflow `release.yml` and environment `npm`.
+4. In the package settings on npmjs.com, choose *Require two-factor authentication and disallow tokens*.
+5. In the GitHub repository settings, create the environment `npm` with yourself as required reviewer and deployments limited to `v*` tags, and a tag ruleset that lets only you create, update or delete `v*` tags.
 
 ## Commands
 
@@ -32,6 +44,9 @@ pnpm test               # Automated unit tests (node:test), this is what CI runs
 pnpm test:coverage      # Same tests with Node's built-in line/branch coverage report
 pnpm md2pdf [options] [files...]   # Full pipeline: TOC → Mermaid → PDF
 pnpm smoke              # Manual smoke test of md2pdf with CSS overrides
+pnpm build              # Compile to dist/ and copy css/ and config/ next to the modules
+pnpm pack:check [dir]   # Pack without scripts and verify the tarball contents (after pnpm build)
+pnpm pack:smoke <tarball> [--mermaid] [--keep]   # Install the tarball into a temp prefix and convert a fixture
 ```
 
 Run a single tool directly with tsx:
@@ -58,14 +73,15 @@ created instead of side-stepping the default placement.
 
 Platform rules are passed in, not read from `process.platform` (#50): `commonAncestorDirectory`, `resolveInputs` and `mergeMarkdown` take an optional `PathRules` (`path.win32`/`path.posix` plus a `caseInsensitive` flag) that defaults to `NATIVE_PATH_RULES`. Both platform paths therefore run on any runner instead of leaving the Windows branch untested on Linux CI, and `pnpm test` runs on a `ubuntu-latest` + `windows-latest` matrix on top of that.
 
-Scope: the pure logic only. Steps that shell out through `runNpx` (doctoc,
+Scope: the pure logic only. Steps that spawn a tool through `runTool` (doctoc,
 mermaid-cli, md-to-pdf) are not covered — the tests must stay fast and must not
-need the network or Chromium. Tests that need a symbolic link skip themselves
+need the network or Chromium. `pnpm pack:smoke` runs the real tools against an
+installed tarball instead (see *Packaging and release*). Tests that need a symbolic link skip themselves
 via `t.skip()` when the platform refuses to create one (Windows needs Developer
 Mode or elevation); the Windows-junction test skips on other platforms.
 
 `pnpm test:coverage` only reports files that at least one test imports. The
-modules that no test loads (`md2pdf.ts` and the `runNpx` steps) are missing
+modules that no test loads (`md2pdf.ts` and the `runTool` steps) are missing
 from the table rather than listed at 0 %, so the "all files" total covers the
 tested modules only.
 
@@ -86,8 +102,8 @@ check, out of `run-doctoc.ts`),
 validation, out of `resolve-options.ts`), `css-var-usage.ts` (the unused
 `--css-var` check, out of `md2pdf.ts`), `css-import-conditions.ts`
 (`@import` layer/supports/media parsing, out of `resolve-stylesheet.ts`),
-`npx-invocation.ts` (the shell-free npx lookup and error formatting, out of
-`run-npx.ts`), `css-structure.ts` (the comment/string/brace scan behind the
+`tool-invocation.ts` (how a tool is started — installed bin script or npx
+override — and the error formatting, out of `run-tool.ts`), `css-structure.ts` (the comment/string/brace scan behind the
 `@import` and `url()` rewrites, out of `resolve-stylesheet.ts`), `css-import-hoisting.ts` (remote `@import` placement and
 restating, out of `resolve-stylesheet.ts`), `stylesheet-lookup.ts` (the `-s`
 lookup order, out of `resolve-options.ts`) and `output-targets.ts` (output path
@@ -116,7 +132,7 @@ Options are named after what the user wants rather than after the tool that impl
 
 Commander cannot give one option two long names, so each retired **short** flag is declared as its own hidden option with an `-alias` long name (`-r, --temp-root-alias`); `resolveOptions` folds the pair back together. `--toc`/`--no-toc` is a tri-state Commander reports as `undefined`/`true`/`false`, which becomes `ConverterOptions.toc` (`auto` / `always` / `never`).
 
-Commander 12 has no `Option.helpGroup()` (v14 added it), so `--help` renders Commander's usage and arguments, then a grouped option block built by `formatOptionGroups` from `HELP_GROUPS` in `cli-program.ts` (`visibleOptions` is emptied so the flat list is not printed twice). `cli-program.test.ts` asserts that every visible option has exactly one row in that block, which is what stops a newly added option from disappearing from the help.
+`--help` lists the options in sections (Input, Output, Styling, TOC, Diagrams, Diagnostics) through Commander's own `optionsGroup()`: `createProgram` sets the heading before each block of options. Commander orders the sections by the first option registered in each, so `-V, --version` is declared inside the Diagnostics block instead of first, and `-h, --help` is declared explicitly with `helpOption()`, because a lazily created help option carries no group and would open a generic `Options:` section. `--css-var` has no default value, which Commander would print as `(default: [])`; `collect` starts the list instead. `cli-program.test.ts` renders `helpInformation()` and asserts that no `Options:` section exists and every visible option has exactly one row, which is what stops a newly added option from landing outside the sections.
 
 After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / progress / `outro` UI. The run-level steps go through `runStep(label, action)`; each **file** gets one live line from `fileProgress(name)` naming the step in progress (`README.md · Rendering PDF`), and only its outcome (`Created <pdf>`) stays on screen (#59). Seven persistent lines per file used to bury the warnings of a 30-file run.
 
@@ -195,7 +211,7 @@ Three guards keep a run from destroying files it did not mean to replace (#45):
 
 `runDoctoc` runs automatically when the source file contains a **genuine** doctoc START marker: a line that opens an HTML comment block with `<!-- START doctoc `, outside fenced code and other comment blocks. The `--toc` flag (previously `-f`/`--force-doctoc`) forces a run even when no markers are present, and `--no-toc` switches the automatic run off entirely. doctoc itself only ever runs on the temp copy. The `-u`/`--write-toc` flag writes the refreshed copy back to the original Markdown file when the source has a genuine marker pair, and only if nothing outside the TOC block changed (`isTocOnlyRefresh`). For a source whose scan is `none`, `-u` has no effect, so `md2pdf.ts` warns with `describeMissingMarkerBlock` before the doctoc step — also under `--toc`, which only puts the TOC into the PDF. `-u` is rejected together with `--merge`: the pipeline would run over the concatenated temp file, and the write-back would refresh that copy instead of any source.
 
-doctoc 2.3.0 is not fence-aware: it takes the first line matching `<!-- START doctoc ` anywhere and, without an END marker after it, replaces everything to the end of the file (#44). The pure rules in `src/steps/doctoc-markers.ts` guard against that. `scanDoctocMarkers` classifies the source as `none` / `pair` / `broken`. `maskDocumentedMarkers` hides every non-genuine marker occurrence (fenced, inline or indented code, comments) from doctoc by inserting U+E000 after its `<!--`, and `unmaskDocumentedMarkers` restores them after the run, so documented examples survive byte-identically. A genuine START marker without a following END marker (`broken`) fails that file before doctoc runs.
+doctoc up to 2.3.0 was not fence-aware: it took the first line matching `<!-- START doctoc ` anywhere and, without an END marker after it, replaced everything to the end of the file (#44). doctoc 2.5, the pinned version, only matches markers in HTML nodes of the parsed document, so the installed tool no longer does that — `doctoc-markers.test.ts` runs its real `transform` and would notice a regression. The guards stay for a `DOCTOC_PKG` override with an older doctoc and for the explicit `broken` error. The pure rules in `src/steps/doctoc-markers.ts` guard against that. `scanDoctocMarkers` classifies the source as `none` / `pair` / `broken`. `maskDocumentedMarkers` hides every non-genuine marker occurrence (fenced, inline or indented code, comments) from doctoc by inserting U+E000 after its `<!--`, and `unmaskDocumentedMarkers` restores them after the run, so documented examples survive byte-identically. A genuine START marker without a following END marker (`broken`) fails that file before doctoc runs.
 
 When doctoc creates a **brand-new** TOC (no markers existed in the source file, i.e. the `--toc` case), the generated block is relocated on the temp copy to sit directly before the first second-order (`##`, or setext-style heading followed by a `---` underline) heading in the file — instead of wherever doctoc's own default placement put it. Refreshes of an already-existing TOC (markers were already present) are left exactly where doctoc put them; the relocation logic never touches `context.sourceFile`. Headings that do not render are ignored when locating the target position (see *Markdown scanning*). If the document has no `##`-equivalent heading at all, doctoc's original placement is left untouched. The relocation rules themselves are a pure string-to-string transformation in `src/steps/toc-placement.ts` (`relocateTocBeforeFirstH2`); `run-doctoc.ts` applies them to the temp copy while documented markers are still masked, so an example can never be mistaken for the generated block.
 
@@ -246,7 +262,7 @@ A side effect worth knowing: the `--html` output is now self-contained, so it re
 
 `resolveOptions` resolves `-s <value>` through `findStylesheet`, taking the first candidate that is a regular file:
 
-1. `<value>` as a path, resolved against the caller's directory: `MD2PDF_INVOCATION_DIR` when set (the global wrapper sets it, see *Global wrapper*), otherwise `process.cwd()`. No extension is ever added here.
+1. `<value>` as a path, resolved against the caller's directory, `process.cwd()` (see *Packaging and release*). No extension is ever added here.
 2. For a bare name only — no `/` or `\`, no drive prefix, not `.` / `..` — `<config dir>/<value>`.
 3. For a bare name that does not end in `.css` (case-insensitive), `<config dir>/<value>.css`.
 
@@ -322,32 +338,37 @@ One variable per concept since #59: `default.css` used to define a legacy `page-
 
 ### External tool invocation
 
-All three sub-tools are invoked via `npx` through `runNpx` (`src/steps/run-npx.ts`). Output is piped (hidden) by default and inherited when `--verbose` is set. On failure, `runNpx` re-throws with the tool's stderr/stdout as the error message. Fallback versions are hardcoded in `resolve-options.ts` (not the `^` ranges in `package.json`):
+All three sub-tools are started through `runTool` (`src/steps/run-tool.ts`). Output is piped (hidden) by default and inherited when `--verbose` is set. On failure, `runTool` re-throws with the tool's stderr/stdout as the error message.
+
+By default a tool runs from the **installed dependency** (#56): `resolveToolInvocation` (`src/steps/tool-invocation.ts`) reads the package's `package.json`, takes the script its `bin` field names for the command, and spawns it with `process.execPath`. The version is therefore exactly the pinned entry in `dependencies`, a conversion needs no network, and the Chromium that Puppeteer downloaded at install time is the one used. The previous `npx <pkg>@<version>` only worked because the wrapper ran from the repository: a globally installed command runs in the user's directory, where npx finds nothing and fetches every tool plus a second Chromium into its cache.
+
+The package is looked up in the `node_modules` directories `require.resolve.paths(<package>)` lists for `run-tool.ts`, nearest first, and the nearest `package.json` wins, as in Node's own resolution — the checkout's `node_modules` in development, npm's global layout or pnpm's store once installed. `require.resolve('<pkg>/package.json')` is not an option: mermaid-cli's `exports` map does not list `./package.json`, so it throws `ERR_PACKAGE_PATH_NOT_EXPORTED`. One test in `tool-invocation.test.ts` resolves all three tools against the real checkout to keep that honest.
+
+| Tool | Package / command | npx override |
+|---|---|---|
+| doctoc | `doctoc` / `doctoc` | `DOCTOC_PKG` |
+| mermaid-cli | `@mermaid-js/mermaid-cli` / `mmdc` | `MERMAID_CLI_PKG` |
+| md-to-pdf | `md-to-pdf` / `md-to-pdf` | `MD_TO_PDF_PKG` |
+
+A non-empty override variable is an npx package selector such as `doctoc@latest` and runs that tool through npx instead — deliberately, to try another version without reinstalling. Failures name the package, or `npx <selector>` for an override.
 
 Every external tool gets a wall-clock timeout (10 minutes, `MD2PDF_TOOL_TIMEOUT` in milliseconds overrides it, `0` disables it) and a 64 MiB output buffer (#51): a wedged Chromium used to block the run forever, and a chatty failure past the old 10 MiB buffer was killed with `ENOBUFS` and reported as a tool failure.
 
 The document title is passed as `--document-title=<title>`, one argv element. As two elements, md-to-pdf's parser took the following token for a flag whenever the title started with `--` — a first heading of `# --version` aborted the run with a raw Node stack trace (#51).
 
-`runNpx` uses `execFileSync` with an **argument array** and no shell. It must never build a command string: `cmd.exe` expands `%VAR%` even inside double quotes, and `%` is legal in Windows file names, so a path like `100%TMP%done.md` or a `--document-title` taken from a heading such as `Deploying to %USERPROFILE%` would be silently rewritten before the tool sees it.
+`runTool` uses `execFileSync` with an **argument array** and no shell. It must never build a command string: `cmd.exe` expands `%VAR%` even inside double quotes, and `%` is legal in Windows file names, so a path like `100%TMP%done.md` or a `--document-title` taken from a heading such as `Deploying to %USERPROFILE%` would be silently rewritten before the tool sees it.
 
-Because there is no shell, Windows cannot spawn the `npx.cmd` batch file — Node rejects `.cmd` with `shell: false` (the CVE-2024-27980 hardening) with `EINVAL`. `resolveNpxInvocation` therefore runs npm's bundled `npx-cli.js` with the current Node binary (`process.execPath`), looking next to `process.execPath` first and then in the `../lib/node_modules` layout. On other platforms `npx` is executable directly and is spawned by name.
-
-| Tool | Env var override | Hardcoded fallback |
-|---|---|---|
-| doctoc | `DOCTOC_PKG` | `doctoc@2.3.0` |
-| @mermaid-js/mermaid-cli | `MERMAID_CLI_PKG` | `@mermaid-js/mermaid-cli@11.12.0` |
-| md-to-pdf | `MD_TO_PDF_PKG` | `md-to-pdf@5.2.5` |
+Because there is no shell, Windows cannot spawn the `npx.cmd` batch file — Node rejects `.cmd` with `shell: false` (the CVE-2024-27980 hardening) with `EINVAL`. `locateNpxInvocation` therefore runs npm's bundled `npx-cli.js` with the current Node binary (`process.execPath`), looking next to `process.execPath` first and then in the `../lib/node_modules` layout. On other platforms `npx` is executable directly and is spawned by name. Only an override needs this; an installed tool's bin script is a plain `.js` file started with `process.execPath` everywhere.
 
 Mermaid diagrams render to SVG by default. The `--png` flag switches mermaid-cli's output format to PNG (`-e png`) for viewers or downstream tools that handle embedded SVG poorly. When `--png` is set, `render-mermaid.ts` also passes `-s 3` (`--scale`), a module-level `PNG_PRINT_SCALE` constant, so PNG diagrams stay sharp at print resolution instead of the blurry default scale of 1.
 
-### Global wrapper (`bin/`)
+### Packaging and release
 
-`bin/md2pdf.ps1` resolves relative file paths against the caller's working directory before delegating to `pnpm --silent md2pdf`. `bin/md2pdf.cmd` delegates to the `.ps1`. Add `bin/` to `PATH` via `scripts/install.ps1`; remove via `scripts/uninstall.ps1`.
+`md2pdf` is published to npm as `@chrtmnn/md2pdf` (#56). The `bin` field maps the `md2pdf` command to `dist/md2pdf.js`, and npm creates the shims itself (`md2pdf.cmd`/`.ps1` on Windows, a symlink elsewhere). The PowerShell wrapper in `bin/`, its install scripts and `MD2PDF_INVOCATION_DIR` are gone, and the wrapper bugs of #52 with them: the wrapper ran `pnpm` from the repository root and had to pass the caller's directory along, whereas an npm-installed command runs in the caller's directory, so `process.cwd()` is where relative paths and `-s` values resolve.
 
-The wrapper classifies each CLI argument before forwarding it: path options (`-o`, `-r`, and their long forms) have their value resolved to an absolute path; passthrough-value options (`-s`, `--css-var`, `--merge`, `--title`, and their long forms) have their value forwarded verbatim, in both the space-separated and the `--option=value` inline form; flags and positional arguments are resolved as paths or passed as-is. Positional arguments are resolved to absolute paths whether they are files or directories.
-
-`-s/--stylesheet` is a passthrough option because its value may be a bare name from `~/.md2pdf` (see *Stylesheet lookup*), which only `md2pdf` itself can tell apart from a path. Instead of resolving it, the wrapper exports the caller's directory as `MD2PDF_INVOCATION_DIR` for the duration of the call and restores the previous value in its `finally` block: a script run from an interactive PowerShell shares that session's environment, and a stale value would redirect later direct `pnpm md2pdf` runs.
-
-Option lookup uses ordinal (case-sensitive) `HashSet`s built by `New-OrdinalSet`. PowerShell's `@{}` hashtables and the `-contains` operator both compare case-insensitively, which would make the valueless flag `-R/--recursive` collide with the path option `-r/--temp-root` and swallow the next argument as a path.
-
-Before classification, `$args` is flattened by `ConvertTo-FlatArgumentList`. PowerShell passes a parenthesized array expression (`md2pdf (Get-ChildItem *.md).Name`) as a *single* array-valued argument instead of unrolling it, which would otherwise break the string-based parsing loop.
+- **Build.** `pnpm build` empties `dist/`, compiles with `tsconfig.build.json` (everything except `src/test/`, CommonJS as in development, `newLine: lf` so the shebang does not end in `\r`) and copies `src/css/` and `src/config/` next to the modules. The modules find those assets and `package.json` through `__dirname`-relative paths (`../css`, `../config`, `../package.json`), which hold in `src/` and `dist/` alike. `prepack` runs the build, so `npm pack` and a manual `npm publish` never ship a stale `dist/`. `tsconfig.json` uses `module: Node20` because Commander 15 is ESM-only: that setting is what lets the CommonJS output `require()` it, which Node supports from 22.12 on — hence `engines: >=22.12.0`.
+- **Contents.** `files` is an allowlist, `dist` and `README.md`, on top of what npm always adds: `package.json`, `LICENSE` and every `README.*`. `scripts/pack-check.mjs` packs with `--ignore-scripts` and fails on any other file, on a missing entry point or asset, or on a shebang line without LF. A local `README.pdf` from `pnpm smoke` therefore fails the check — npm would publish it — so pack from a clean checkout.
+- **Dependencies.** The direct `dependencies` are pinned to exact versions, because `pnpm-lock.yaml` never reaches a user's `npm i -g`; Dependabot moves the pins with a one-week cooldown. Transitive dependencies still resolve freshly, which keeps their security fixes flowing; there is deliberately no `npm-shrinkwrap.json`. The package has no install scripts of its own. Puppeteer's `postinstall` downloads Chromium, which the README discloses together with pnpm's `approve-builds --global`; `allowBuilds` in `pnpm-workspace.yaml` only applies inside this repository.
+- **Smoke test.** `scripts/package-smoke.mjs <tarball>` installs the tarball with `npm install --global --prefix <temp>` and runs the installed command from a temp directory: `--version`, `--help`, and two conversions of a fixture with a doctoc marker block and a relatively referenced image — one with the bundled stylesheet, one with `-s <name>` from `MD2PDF_CONFIG_DIR` — checking the PDF header and the `--html` output. `--mermaid` adds a diagram. It is the only automated run of the real tools.
+- **CI.** The `package` job in `typecheck.yml` runs build, pack check and smoke test (without Mermaid) on `ubuntu-latest` and `windows-latest`. Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox needs, so the job lifts `kernel.apparmor_restrict_unprivileged_userns` instead of running Chromium without a sandbox. `pnpm audit --audit-level critical` runs in the `typecheck` job; the high findings all arrive through mermaid-cli and Puppeteer.
+- **Release.** `release.yml` runs on `v*` tags only, one run per tag at a time. `verify` checks that the tag equals `v` plus `version` and points to a commit on `main`, installs with `--frozen-lockfile`, audits, type-checks, tests, builds and packs; it uploads the tarball and records its SHA-256 **before** the smoke test, because that test's global `npm install` resolves dependencies without a lockfile and runs their install scripts, which must not get a chance to swap the tarball. `publish` runs in the `npm` environment with `id-token: write`, downloads the tarball, checks its digest and publishes it with `--provenance` through npm Trusted Publishing; no npm token exists anywhere. It installs nothing and runs no package scripts, and neither job restores a dependency cache. Every action in both workflows is pinned to a commit SHA.
