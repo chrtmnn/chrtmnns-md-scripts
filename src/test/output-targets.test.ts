@@ -15,6 +15,7 @@ import {
   shortenStemForTemp,
   stampGeneratedHtml,
 } from '../steps/output-targets';
+import { POSIX_PATH_RULES, WINDOWS_PATH_RULES } from '../steps/path-rules';
 
 const root = path.resolve('fixture-root');
 
@@ -123,4 +124,30 @@ test('shortenStemForTemp counts bytes and never splits a code point (#55)', () =
 
   assert.equal(shortened, 'ä'.repeat(120));
   assert.equal(Buffer.byteLength(shortened, 'utf8'), 240);
+});
+
+test('shortenStemForTemp halves the budget for the whole path on Windows (#55)', () => {
+  const base = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\md-scripts-test-RVDWhk\\scratch';
+  const shortened = shortenStemForTemp('a'.repeat(250), base, WINDOWS_PATH_RULES);
+
+  // <base>\<stem>_XXXXXX\<stem>_converted.html has to fit MAX_PATH, and the
+  // stem appears in it twice.
+  const longestPath = `${base}\\${shortened}_XXXXXX\\${shortened}_converted.html`;
+  assert.ok(shortened.length < 250, 'the stem is shortened for the path budget, not just the name');
+  assert.ok(longestPath.length <= 260, `${longestPath.length} characters is past MAX_PATH`);
+});
+
+test('shortenStemForTemp ignores the path budget on POSIX (#55)', () => {
+  const base = `/tmp/${'deep/'.repeat(40)}`;
+
+  assert.equal(shortenStemForTemp('a'.repeat(250), base, POSIX_PATH_RULES), 'a'.repeat(240));
+});
+
+test('shortenStemForTemp fails readably when the base directory leaves no room (#55)', () => {
+  const base = `C:\\${'d'.repeat(240)}`;
+
+  assert.throws(
+    () => shortenStemForTemp('doc', base, WINDOWS_PATH_RULES),
+    /Temp directory path too long.*Use --temp-root with a shorter path/s,
+  );
 });

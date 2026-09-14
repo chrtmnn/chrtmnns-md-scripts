@@ -1,4 +1,5 @@
 import path from 'path';
+import { NATIVE_PATH_RULES, PathRules } from './path-rules';
 
 /**
  * Paths a single-file conversion writes to, derived from the source file alone.
@@ -51,23 +52,56 @@ const MAX_NAME_BYTES = 255;
  */
 const LONGEST_TEMP_SUFFIX = '_converted.html'.length;
 
+/** Random suffix `mkdtempSync` appends to the directory name. */
+const MKDTEMP_SUFFIX = '_XXXXXX'.length;
+
+/** Shortest stem worth generating; below this the base directory is the problem. */
+const MIN_TEMP_STEM = 8;
+
 /**
  * Shortens a file stem so the temp directory and the temp files derived from
- * it stay inside the filesystem's name limit.
+ * it stay inside the platform's limits.
  *
- * A 250-character source file name made `mkdtempSync` fail with a raw
- * `ENAMETOOLONG` from Node, aborting the run with no readable message (#55).
- * Only *temp* names are shortened; the output PDF keeps the full stem, since
- * the source file proves that name fits.
+ * Two different limits apply (#55). Every filesystem caps a single name at
+ * `NAME_MAX`, so a 250-character source file name made `mkdtempSync` fail with
+ * a raw `ENAMETOOLONG`. Windows additionally caps the *whole* path at
+ * `MAX_PATH`, which the longest generated path has to fit:
+ *
+ * ```text
+ * <baseDir>\<stem>_XXXXXX\<stem>_converted.html
+ * ```
+ *
+ * The stem appears twice there, hence the halved budget below. Only *temp*
+ * names are shortened; the output PDF keeps the full stem, since the source
+ * file proves that name fits.
  *
  * Truncation counts UTF-8 bytes, not characters, and never splits a code
  * point — a stem of 200 umlauts is 400 bytes.
  *
  * @param stem - Source file name without its extension.
+ * @param baseDir - Directory the temp directory will be created in; omit when
+ *   the caller does not know it yet.
+ * @param rules - Path rules to apply; the running platform's by default.
  * @returns The stem, shortened when it would not fit.
+ * @throws When `baseDir` is so deep that no usable name is left.
  */
-export function shortenStemForTemp(stem: string): string {
-  const limit = MAX_NAME_BYTES - LONGEST_TEMP_SUFFIX;
+export function shortenStemForTemp(stem: string, baseDir?: string, rules: PathRules = NATIVE_PATH_RULES): string {
+  let limit = MAX_NAME_BYTES - LONGEST_TEMP_SUFFIX;
+
+  if (baseDir !== undefined && rules.maxPathLength !== undefined) {
+    // baseDir + separator + <stem>_XXXXXX + separator + <stem>_converted.html
+    const fixed = baseDir.length + 2 + MKDTEMP_SUFFIX + LONGEST_TEMP_SUFFIX;
+    const perStem = Math.floor((rules.maxPathLength - fixed) / 2);
+
+    if (perStem < MIN_TEMP_STEM) {
+      throw new Error(
+        `Temp directory path too long: ${baseDir} leaves no room for a work directory name (the platform limits a path to ${rules.maxPathLength} characters). Use --temp-root with a shorter path.`,
+      );
+    }
+
+    limit = Math.min(limit, perStem);
+  }
+
   if (Buffer.byteLength(stem, 'utf8') <= limit) {
     return stem;
   }
