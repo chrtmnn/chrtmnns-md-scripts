@@ -6,7 +6,7 @@ This file provides guidance to AI Agents when working with code in this reposito
 
 `main` stays in a runnable state. Every change goes through a short-lived branch.
 
-**Branch naming**: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `refactor/<topic>`.
+**Branch naming**: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `refactor/<topic>`, `release/v<x.y.z>`.
 
 **Per change**:
 
@@ -20,15 +20,18 @@ This file provides guidance to AI Agents when working with code in this reposito
 
 **Per release**:
 
-1. Bump `version` in `package.json` on `main`
-2. `git tag -a v<x.y.z> -m "<summary>"`
-3. `git push --tags`
-4. Approve the `publish` job of the `release` workflow run in the `npm` environment. It publishes the tarball the `verify` job built, tested and smoke-tested; nothing is built during the publish itself (see *Packaging and release*).
+A release is a change like any other up to the tag — the version bump goes through a branch and a pull request, and only the tag is created on `main`.
+
+1. `git checkout -b release/v<x.y.z>`, then `npm version <x.y.z> --no-git-tag-version` to bump `version` in `package.json`, and commit it
+2. Push, open the pull request and merge it as under *Per change*, then `git checkout main && git pull`
+3. `git tag -a v<x.y.z> -m "<summary>"` on the merged commit — the `release` workflow refuses a tag that does not match `version` or points outside `main`
+4. `git push origin v<x.y.z>` — only this tag, not `--tags`, so no stray local tag starts a release
+5. Approve the `publish` job of the `release` workflow run in the `npm` environment. It publishes the tarball the `verify` job built, tested and smoke-tested; nothing is built during the publish itself (see *Packaging and release*).
 
 **One-time npm setup** (#56) — none of this lives in the repository:
 
 1. An npm account with 2FA, preferably a security key. The package is published under its `@chrtmnn` user scope.
-2. Publish the first version by hand, because a Trusted Publisher can only be attached to an existing package: in a fresh clone at the release commit, `pnpm install --frozen-lockfile`, then `npm publish --access public` with the 2FA prompt. A fresh clone matters: npm packs every `README.*` regardless of `files`, so a local `README.pdf` would be published. Then push the tag and reject the `publish` approval of its run, since that version already exists.
+2. Publish the first version by hand, because a Trusted Publisher can only be attached to an existing package: in a fresh clone at the merged release commit on `main` (steps 1–3 of *Per release*), `pnpm install --frozen-lockfile`, then `npm publish --access public` with the 2FA prompt. A fresh clone matters: npm packs every `README.*` regardless of `files`, so a local `README.pdf` would be published. Then push the tag and reject the `publish` approval of its run, since that version already exists.
 3. On npmjs.com, add a Trusted Publisher for `chrtmnn/chrtmnns-md-scripts` with workflow `release.yml` and environment `npm`.
 4. In the package settings on npmjs.com, choose *Require two-factor authentication and disallow tokens*.
 5. In the GitHub repository settings, create the environment `npm` with yourself as required reviewer and deployments limited to `v*` tags, and a tag ruleset that lets only you create, update or delete `v*` tags.
