@@ -12,13 +12,13 @@ import path from 'path';
 import { PackageOverrides, ToolName } from '../types';
 
 /** An executable and the arguments that must precede the tool's own. */
-export type NpxInvocation = {
+export type ProcessInvocation = {
   file: string;
   leadingArgs: string[];
 };
 
 /** How one tool is started, and the name its failures are reported under. */
-export type ToolInvocation = NpxInvocation & {
+export type ToolInvocation = ProcessInvocation & {
   /** The package name, or `npx <selector>` for an override. */
   label: string;
 };
@@ -203,7 +203,7 @@ export function locateNpxInvocation(
   platform: NodeJS.Platform,
   execPath: string,
   exists: (candidate: string) => boolean,
-): NpxInvocation {
+): ProcessInvocation {
   if (platform !== 'win32') {
     return { file: 'npx', leadingArgs: [] };
   }

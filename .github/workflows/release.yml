@@ -1,9 +1,12 @@
 name: release
 
-# Publishes @chrtmnn/md2pdf to npm when a v* tag is pushed (#56).
+# Publishes @chrtmnn/md2pdf to npm when a v* tag on main is pushed (#56).
 #
-# `verify` builds, tests and packs the tarball; `publish` uploads exactly that
-# tarball. The publish job installs no dependencies and runs no package
+# `verify` builds, tests and packs the tarball, then uploads it and records its
+# SHA-256 *before* the smoke test runs: that test's global npm install resolves
+# dependencies freshly and runs their install scripts, so it must not get a
+# chance to swap the tarball that is published. `publish` checks the digest and
+# uploads exactly that tarball. It installs no dependencies and runs no package
 # scripts, so the one job holding the OIDC token executes nothing from the
 # registry. It authenticates through npm Trusted Publishing — there is no npm
 # token in this repository — and runs in the `npm` environment, whose
@@ -17,7 +20,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,10 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      tarball-sha256: ${{ steps.digest.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Full history, so the tagged commit can be checked against main.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
@@ -46,6 +53,13 @@ jobs:
             exit 1
           fi
 
+      - name: Check that the tagged commit is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME points to a commit that is not on main"
+            exit 1
+          fi
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm audit --audit-level critical
@@ -60,13 +74,11 @@ jobs:
         id: pack
         run: node scripts/pack-check.mjs "$RUNNER_TEMP/pack"
 
-      - name: Allow Chromium's sandbox
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: Install the tarball and convert a document
+      - name: Record the tarball digest
+        id: digest
         env:
           TARBALL: ${{ steps.pack.outputs.tarball }}
-        run: node scripts/package-smoke.mjs "$TARBALL"
+        run: echo "sha256=$(sha256sum "$TARBALL" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -74,6 +86,14 @@ jobs:
           path: ${{ steps.pack.outputs.tarball }}
           if-no-files-found: error
           retention-days: 7
+
+      - name: Allow Chromium's sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install the tarball and convert a document
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: node scripts/package-smoke.mjs "$TARBALL"
 
   publish:
     needs: verify
@@ -87,6 +107,18 @@ jobs:
         with:
           name: package
           path: ${{ runner.temp }}/package
+
+      - name: Check the tarball digest
+        env:
+          TARBALL_SHA256: ${{ needs.verify.outputs.tarball-sha256 }}
+        run: |
+          shopt -s nullglob
+          tarballs=("$RUNNER_TEMP"/package/*.tgz)
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one tarball, found ${#tarballs[@]}"
+            exit 1
+          fi
+          echo "$TARBALL_SHA256  ${tarballs[0]}" | sha256sum --check --strict
 
       # Node 24 ships an npm CLI with Trusted Publishing support.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

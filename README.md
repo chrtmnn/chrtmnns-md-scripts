@@ -250,7 +250,7 @@ It **replaces** the bundled stylesheet instead of adding to it, exactly like any
 Copy-Item "$(npm root --global)\@chrtmnn\md2pdf\dist\css\default.css" $HOME\.md2pdf\default.css
 ```
 
-On macOS and Linux:
+After installing with pnpm, use `pnpm root --global` in place of `npm root --global`. On macOS and Linux:
 
 ```bash
 cp "$(npm root --global)/@chrtmnn/md2pdf/dist/css/default.css" ~/.md2pdf/default.css
