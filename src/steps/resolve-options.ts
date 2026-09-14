@@ -20,7 +20,7 @@ function isFile(file: string): boolean {
 
 type RawOptions = {
   stylesheet?: string;
-  cssVar: string[];
+  cssVar?: string[];
   outputDir?: string;
   title?: string;
   tempRoot?: string;
@@ -48,7 +48,7 @@ type RawOptions = {
  * @param previous - Previously collected values for the same option.
  * @returns A new array containing all collected values.
  */
-export function collect(value: string, previous: string[]): string[] {
+export function collect(value: string, previous: string[] = []): string[] {
   return previous.concat([value]);
 }
 
@@ -93,7 +93,7 @@ export function resolveOptions(program: Command): ConverterOptions {
     );
   }
 
-  const { cssVars, warnings: cssVarWarnings } = translateLegacyCssVars(parseCssVars(rawOptions.cssVar));
+  const { cssVars, warnings: cssVarWarnings } = translateLegacyCssVars(parseCssVars(rawOptions.cssVar ?? []));
 
   // Relative values and bare names refer to the directory md2pdf was called
   // from, which is the working directory of an npm-installed command (#56).

@@ -104,6 +104,15 @@ test('collect appends without mutating the previous values', () => {
   assert.deepEqual(previous, ['a=1']);
 });
 
+test('--css-var starts empty and collects every value without a declared default (#59)', () => {
+  assert.deepEqual(collect('a=1'), ['a=1']);
+  assert.deepEqual(resolveOptions(parse(['doc.md'])).cssVars, []);
+  assert.deepEqual(resolveOptions(parse(['--css-var', 'a=1', '--css-var', 'b=2', 'doc.md'])).cssVars, [
+    { name: '--a', value: '1' },
+    { name: '--b', value: '2' },
+  ]);
+});
+
 test('falls back to the bundled default stylesheet', (t) => {
   // An empty config directory, so a developer's own ~/.md2pdf/default.css
   // cannot decide the outcome of this test (#40).
