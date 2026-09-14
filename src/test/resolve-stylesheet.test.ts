@@ -604,3 +604,46 @@ test('leaves a remote @import inside an unterminated comment alone (#38)', (t) =
 
   assert.equal(result, stylesheet, 'nothing live to hoist, so the fast path applies');
 });
+
+test('a remote @import inside a block keeps its condition instead of being hoisted (#46)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(
+    dir,
+    'base.css',
+    '@layer fonts { @import url(https://example.com/r.css); }\nbody { color: red; }\n',
+  );
+
+  // Nothing is rewritten, so the fast path passes the file through as-is —
+  // which is the point: hoisting would have applied the sheet unconditionally.
+  assert.equal(resolveStylesheet(makeOptions({ stylesheet }), dir), stylesheet);
+
+  const withOverrides = merged(dir, stylesheet);
+  assert.equal(withOverrides.includes('@layer fonts { @import url(https://example.com/r.css); }'), true, withOverrides);
+  assert.equal(withOverrides.startsWith('@import'), false, 'the import is not lifted out of its layer');
+});
+
+test('an @import inside a string literal stays document content (#46)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(
+    dir,
+    'base.css',
+    ".doc::before { content: '@import url(https://example.com/r.css);'; }\n@import url(https://example.com/real.css);\n",
+  );
+
+  const output = inlinedWithoutOverrides(dir, stylesheet);
+
+  assert.equal(output.includes("content: '@import url(https://example.com/r.css);';"), true, output);
+  assert.equal(output.startsWith('@import url(https://example.com/real.css);'), true, output);
+  assert.equal(output.split('example.com/r.css').length - 1, 1, 'the quoted one is not hoisted as a second import');
+});
+
+test('a url() inside a string literal is not resolved as an asset (#46)', (t) => {
+  const dir = tempDir(t);
+  const stylesheet = writeFile(dir, 'base.css', '.doc::after { content: "url(logo.png)"; }\n');
+
+  // Without string awareness this aborted the whole run with
+  // "Stylesheet asset not found".
+  const result = resolveStylesheet(makeOptions({ stylesheet }), dir);
+
+  assert.equal(result, stylesheet, 'nothing to resolve, so the original path is passed through');
+});

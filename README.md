@@ -113,7 +113,7 @@ md2pdf --verbose README.md
 Also emit an HTML file next to the PDF for inspection:
 
 ```powershell
-md2pdf --debug README.md
+md2pdf --html README.md
 ```
 
 Render Mermaid diagrams as PNG instead of SVG:
@@ -124,24 +124,30 @@ md2pdf --png README.md
 
 ## Options
 
-`md2pdf [-R] [--merge name] [-s pdf.css] [--css-var name=value] [-o output_dir] [-r temp_root | -p] [-f] [-u] [-k] [--verbose] [--debug] [--png] [files or folders...]`
+`md2pdf [-R] [--merge name] [-s name|path] [--css-var name=value] [-o output_dir] [--title text] [--html] [--toc | --no-toc] [-u] [--png] [--verbose] [--debug] [--keep-temp] [--temp-root dir | --temp-in-output] [files or folders...]`
 
 | option                    | description                                                                                               |
 |---------------------------|-----------------------------------------------------------------------------------------------------------|
-| `-R, --recursive`         | Also expand subfolders of folder arguments. Skips `node_modules`, `.git`, and folders starting with a dot. |
-| `--merge <name>`          | Combine all resolved Markdown files into one PDF with this base name. The `.pdf` suffix is optional.      |
-| `-s, --stylesheet <file>` | Stylesheet for the generated PDF: a path, or the name of a stylesheet in `~/.md2pdf` (see [Personal Stylesheets](#personal-stylesheets)). `-s default` always means the bundled `src/css/default.css`. Without the option, `~/.md2pdf/default.css` is used when it exists, otherwise the bundled stylesheet. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
-| `--css-var <name=value>`  | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. A name the stylesheet never reads with `var()` produces a warning, which usually means a typo. |
-| `-o, --output-dir <dir>`  | Output directory for PDFs. Defaults to each Markdown file's directory, or to the common parent folder of all inputs with `--merge`. |
-| `-r, --temp-root <dir>`   | Root directory for temporary work dirs. Defaults to the system temp directory. Cannot be combined with `-p`. |
-| `-p, --temp-in-output`    | Place the temporary work dir inside the output directory. Cannot be combined with `-r`.                   |
-| `-f, --force-doctoc`      | Create or refresh a TOC on the temporary conversion copy, even without source TOC markers.                |
-| `-u, --update-md-toc`     | Update an existing doctoc TOC in the original Markdown file. Does not create a new source TOC; a file without a marker block gets a warning. Cannot be combined with `--merge`. |
-| `-k, --keep-temp`         | Keep the temporary work directory and print its path.                                                     |
-| `--verbose`               | Print output from doctoc, mermaid-cli, and md-to-pdf while they run.                                      |
-| `--debug`                 | Also write a standalone HTML file next to the PDF using the same stylesheet. An existing HTML file that md2pdf did not generate is never overwritten (see [Output Files](#output-files)). |
-| `--png`                   | Render Mermaid diagrams as PNG instead of SVG. Useful for PDF viewers or downstream tools that handle embedded SVG poorly. |
-| `-h, --help`              | Show help.                                                                                                |
+| `-R, --recursive`            | Also expand subfolders of folder arguments. Skips `node_modules`, `.git`, and folders starting with a dot. |
+| `--merge <name>`             | Combine all resolved Markdown files into one PDF with this base name. The `.pdf` suffix is optional.      |
+| `-o, --output-dir <dir>`     | Output directory for PDFs. Defaults to each Markdown file's directory, or to the common parent folder of all inputs with `--merge`. |
+| `--title <text>`             | Document title for the PDF metadata, instead of the first heading (or the `--merge` name).                |
+| `--html`                     | Also write a standalone HTML file next to the PDF using the same stylesheet. An existing HTML file that md2pdf did not generate is never overwritten (see [Output Files](#output-files)). |
+| `-s, --stylesheet <name\|path>` | Stylesheet for the generated PDF: a path, or the name of a stylesheet in `~/.md2pdf` (see [Personal Stylesheets](#personal-stylesheets)). `-s default` always means the bundled `src/css/default.css`. Without the option, `~/.md2pdf/default.css` is used when it exists, otherwise the bundled stylesheet. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
+| `--css-var <name=value>`     | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. A name the stylesheet never reads with `var()` produces a warning, which usually means a typo. |
+| `--toc`                      | Create or refresh a TOC on the temporary conversion copy, even without source TOC markers.                |
+| `--no-toc`                   | Never create or refresh a TOC, not even for a file that carries doctoc markers.                           |
+| `-u, --write-toc`            | Write the refreshed TOC back into the original Markdown file. Does not create a new source TOC; a file without a marker block gets a warning. Cannot be combined with `--merge`. |
+| `--png`                      | Render Mermaid diagrams as PNG instead of SVG. Useful for PDF viewers or downstream tools that handle embedded SVG poorly. |
+| `-v, --verbose`              | Print output from doctoc, mermaid-cli, and md-to-pdf while they run, one line per step.                   |
+| `--debug`                    | Shorthand for `--html --keep-temp --verbose`.                                                             |
+| `--keep-temp`                | Keep the temporary work directories and print their paths, including the one holding the stylesheet that was used. |
+| `--temp-root <dir>`          | Root directory for temporary work dirs. Defaults to the system temp directory. Cannot be combined with `--temp-in-output`. |
+| `--temp-in-output`           | Place the temporary work dir inside the output directory. Cannot be combined with `--temp-root`.          |
+| `-V, --version`              | Print the version number.                                                                                 |
+| `-h, --help`                 | Show help.                                                                                                |
+
+Every previous option name still works, so existing scripts keep running: `-f`/`--force-doctoc` for `--toc`, `--update-md-toc` for `--write-toc`, `-k` for `--keep-temp`, `-r` for `--temp-root`, and `-p` for `--temp-in-output`. They are no longer listed in `--help`.
 
 ## Uninstall
 
@@ -190,10 +196,10 @@ This writes `handbook.pdf`. The `.pdf` suffix is optional, so `--merge handbook.
 
 Merging happens on the Markdown, before rendering, and the normal conversion then runs once over the combined document. Two consequences are worth knowing:
 
-- All other options still apply. In particular `-f/--force-doctoc` produces **one** table of contents spanning every document, which is usually the main reason to merge in the first place.
-- Each document starts on a new page. The page break is produced by the `.document-break` helper in the default stylesheet. If you pass your own stylesheet with `-s`, add a matching rule or the documents will run together. To flatten the breaks, use `--css-var document-page-break-before=auto --css-var document-break-before=auto`.
+- All other options still apply. In particular `--toc` produces **one** table of contents spanning every document, which is usually the main reason to merge in the first place.
+- Each document starts on a new page. The page break is produced by the `.document-break` helper in the default stylesheet. If you pass your own stylesheet with `-s`, add a matching rule or the documents will run together. To flatten the breaks, use `--css-var document-break-before=auto`.
 
-> **Limitation**: relative link and image targets are not rewritten when documents are merged. All documents share one base location, so a `![](images/logo.png)` written relative to a subfolder will not resolve in the merged PDF. `md2pdf` prints a warning whenever the merged inputs come from more than one folder. Use absolute paths or URLs for assets in documents you intend to merge.
+> **Limitation**: relative **link** targets are not rewritten when documents are merged, so a link written relative to a subfolder may not point anywhere useful in the merged PDF. Relative **image** targets are fine: each one is resolved against its own source document while the documents are concatenated, so two documents in different folders can both use `images/logo.png`. `md2pdf` prints a warning whenever the merged inputs come from more than one folder.
 
 ### Personal Stylesheets
 
@@ -236,7 +242,7 @@ Copy-Item <repo>\src\css\default.css $HOME\.md2pdf\default.css
 
 `default` is reserved for the bundled stylesheet, so `-s default` never picks up `~/.md2pdf/default.css`; use `-s default.css` (or its path) for that. `--verbose` prints which stylesheet a run uses and why.
 
-A stylesheet in the config folder may `@import` other files and use `url()` for fonts and images. Relative references resolve against the folder of the file they appear in, including subfolders such as `~/.md2pdf/theme/`. Put remote imports such as web fonts at the very top of the file you pass with `-s`: after a local `@import` they are currently ignored.
+A stylesheet in the config folder may `@import` other files and use `url()` for fonts and images. Relative references resolve against the folder of the file they appear in, including subfolders such as `~/.md2pdf/theme/`. Remote imports such as web fonts may sit anywhere in the file: they are hoisted to the top of the effective stylesheet, keeping the `layer()`, `supports()` and media conditions of the whole import chain, because a browser honours an `@import` only before every other rule.
 
 ### Manual Page Breaks
 

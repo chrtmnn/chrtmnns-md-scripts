@@ -7,7 +7,7 @@
  * rules.
  */
 
-import { isBlank, findFirstH2Index, findFrontmatterEnd } from './markdown-scan';
+import { BOM, classifyLines, findFirstH2Index, findFrontmatterEnd, isBlank } from './markdown-scan';
 
 /** Opening marker of a doctoc-generated table of contents block. */
 export const DOCTOC_MARKER = '<!-- START doctoc generated TOC';
@@ -104,6 +104,21 @@ function insertBlockBeforeIndex(lines: string[], block: string[], h2Idx: number)
  * @returns The document with the TOC block relocated, or `raw` unchanged.
  */
 export function relocateTocBeforeFirstH2(raw: string): string {
+  // A BOM sits before the first character of line 1, where it would hide a
+  // frontmatter delimiter or a setext heading from the scan below. It is
+  // detached for the duration and put back verbatim, so a document that
+  // carries one keeps it (#48).
+  const bom = raw.startsWith(BOM) ? BOM : '';
+  return bom + relocateInBody(bom ? raw.slice(BOM.length) : raw);
+}
+
+/**
+ * The relocation itself, on a document guaranteed to start without a BOM.
+ *
+ * @param raw - Document contents without a leading BOM.
+ * @returns The document with the TOC block relocated, or `raw` unchanged.
+ */
+function relocateInBody(raw: string): string {
   const eol = raw.includes('\r\n') ? '\r\n' : '\n';
   const hadTrailingNewline = raw.endsWith('\n');
 
@@ -112,12 +127,20 @@ export function relocateTocBeforeFirstH2(raw: string): string {
     lines.pop();
   }
 
-  const startIdx = lines.findIndex((line) => line.includes(DOCTOC_MARKER));
+  // A doctoc marker is an HTML comment, so only a line that genuinely opens
+  // one counts. A plain `includes` would also find the markers a document
+  // merely *shows* inside a fenced example and relocate those lines instead
+  // of the real TOC (#47).
+  const kinds = classifyLines(lines);
+
+  const startIdx = lines.findIndex((line, i) => kinds[i] === 'comment-start' && line.includes(DOCTOC_MARKER));
   if (startIdx === -1) {
     return raw;
   }
 
-  const endIdx = lines.findIndex((line, i) => i >= startIdx && line.includes(DOCTOC_END_MARKER));
+  const endIdx = lines.findIndex(
+    (line, i) => i >= startIdx && kinds[i] !== 'fence' && kinds[i] !== 'content' && line.includes(DOCTOC_END_MARKER),
+  );
   if (endIdx === -1) {
     return raw;
   }

@@ -20,6 +20,7 @@ import {
   mapLiveContent,
   matchAtxHeading,
   matchFenceDelimiter,
+  stripBom,
   stripInlineComments,
 } from '../steps/markdown-scan';
 
@@ -285,4 +286,11 @@ test('classifyLines tells content, fences and HTML comment blocks apart', () => 
     classifyLines(lines('text\n```md\n<!-- x -->\n```\n<!-- one -->\n<!--\ninside\n-->\nafter `<!--` code')),
     ['content', 'fence', 'fence', 'fence', 'comment-start', 'comment-start', 'comment', 'comment', 'content'],
   );
+});
+
+test('stripBom removes only a leading BOM', () => {
+  assert.equal(stripBom('\uFEFF# Title'), '# Title');
+  assert.equal(stripBom('# Title'), '# Title');
+  assert.equal(stripBom('# Title\uFEFF'), '# Title\uFEFF');
+  assert.equal(stripBom(''), '');
 });

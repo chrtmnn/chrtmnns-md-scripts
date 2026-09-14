@@ -152,8 +152,8 @@ export function scanDoctocMarkers(raw: string): DoctocMarkers {
  * the flag has no effect on that file (#60).
  *
  * @param sourceFile - Path of the source Markdown file.
- * @param forceDoctoc - Whether `-f` was given, which already puts a TOC into
- *   the PDF and makes the `-f` hint pointless.
+ * @param forceDoctoc - Whether `--toc` was given, which already puts a TOC
+ *   into the PDF and makes the `--toc` hint pointless.
  * @returns The warning text, naming the file.
  */
 export function describeMissingMarkerBlock(sourceFile: string, forceDoctoc: boolean): string {

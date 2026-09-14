@@ -55,10 +55,11 @@ function New-OrdinalSet {
 $pathValueOptions = New-OrdinalSet @("-o", "--output-dir", "-r", "--temp-root")
 
 # Options that take a value but whose value must NOT be resolved as a path.
-# --merge takes an output PDF base name, not a path. -s/--stylesheet may be a
-# bare name from ~/.md2pdf, so md2pdf resolves it itself against the caller's
-# directory, which is passed in MD2PDF_INVOCATION_DIR below.
-$passthroughValueOptions = New-OrdinalSet @("-s", "--stylesheet", "--css-var", "--merge")
+# --merge takes an output PDF base name and --title a piece of text, not a
+# path. -s/--stylesheet may be a bare name from ~/.md2pdf, so md2pdf resolves
+# it itself against the caller's directory, which is passed in
+# MD2PDF_INVOCATION_DIR below.
+$passthroughValueOptions = New-OrdinalSet @("-s", "--stylesheet", "--css-var", "--merge", "--title")
 
 function Resolve-ArgumentPath {
     param([string]$Value)

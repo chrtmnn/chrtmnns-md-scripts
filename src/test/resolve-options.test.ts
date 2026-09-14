@@ -7,7 +7,7 @@
  */
 
 import path from 'path';
-import test, { TestContext } from 'node:test';
+import test, { beforeEach, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { Command } from 'commander';
 import { createProgram } from '../cli-program';
@@ -49,6 +49,24 @@ function setEnv(name: string, value: string | undefined): void {
     process.env[name] = value;
   }
 }
+
+/**
+ * Points both directory variables at throwaway locations before every test in
+ * this file.
+ *
+ * Without `MD2PDF_CONFIG_DIR`, `chooseStylesheet` falls back to the real
+ * `~/.md2pdf` and stats the developer's own `default.css`, which would make
+ * any test that later asserts on `stylesheet`/`stylesheetOrigin` depend on the
+ * machine it runs on. Doing it here rather than per test makes the guarantee
+ * structural: a new test cannot forget it. Tests that need a specific
+ * directory still call `withEnv` and win, because it runs afterwards.
+ */
+beforeEach((context) => {
+  // Registered at file level, so the hook only ever runs for a test; the
+  // declared `TestContext | SuiteContext` covers hooks inside a `describe`.
+  const t = context as TestContext;
+  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t), MD2PDF_INVOCATION_DIR: tempDir(t) });
+});
 
 /**
  * Sets the package override variables for one test; the ones not given are
@@ -147,25 +165,48 @@ test('defaults every flag to false and the optional values to undefined', (t) =>
 
   const options = resolveOptions(parse(['doc.md']));
 
-  assert.deepEqual(
-    [options.tempInOutput, options.forceDoctoc, options.updateMdToc, options.keepTemp],
-    [false, false, false, false],
-  );
-  assert.deepEqual([options.verbose, options.debug, options.png, options.recursive], [false, false, false, false]);
+  assert.deepEqual([options.tempInOutput, options.writeToc, options.keepTemp], [false, false, false]);
+  assert.equal(options.toc, 'auto');
+  assert.deepEqual([options.verbose, options.html, options.png, options.recursive], [false, false, false, false]);
   assert.equal(options.outputDir, undefined);
+  assert.equal(options.title, undefined);
   assert.equal(options.tempRoot, undefined);
   assert.equal(options.merge, undefined);
   assert.deepEqual(options.cssVars, []);
 });
 
 test('turns every flag on when it is given', () => {
-  const options = resolveOptions(parse(['-R', '-p', '-f', '-u', '-k', '--verbose', '--debug', '--png', 'doc.md']));
-
-  assert.deepEqual(
-    [options.tempInOutput, options.forceDoctoc, options.updateMdToc, options.keepTemp],
-    [true, true, true, true],
+  const options = resolveOptions(
+    parse(['-R', '--temp-in-output', '--toc', '-u', '--keep-temp', '-v', '--html', '--png', 'doc.md']),
   );
-  assert.deepEqual([options.verbose, options.debug, options.png, options.recursive], [true, true, true, true]);
+
+  assert.deepEqual([options.tempInOutput, options.writeToc, options.keepTemp], [true, true, true]);
+  assert.equal(options.toc, 'always');
+  assert.deepEqual([options.verbose, options.html, options.png, options.recursive], [true, true, true, true]);
+});
+
+test('the previous option names keep working as hidden aliases (#59)', () => {
+  const options = resolveOptions(parse(['-R', '-p', '-f', '-u', '-k', '--verbose', '--png', 'doc.md']));
+
+  assert.deepEqual([options.tempInOutput, options.writeToc, options.keepTemp], [true, true, true]);
+  assert.equal(options.toc, 'always');
+  assert.equal(resolveOptions(parse(['--force-doctoc', 'doc.md'])).toc, 'always');
+  assert.equal(resolveOptions(parse(['--update-md-toc', 'doc.md'])).writeToc, true);
+  assert.equal(resolveOptions(parse(['-r', 'scratch', 'doc.md'])).tempRoot, 'scratch');
+});
+
+test('--no-toc switches the automatic table of contents off (#59)', () => {
+  assert.equal(resolveOptions(parse(['--no-toc', 'doc.md'])).toc, 'never');
+});
+
+test('--debug implies --html, --keep-temp and --verbose (#59)', () => {
+  const options = resolveOptions(parse(['--debug', 'doc.md']));
+
+  assert.deepEqual([options.html, options.keepTemp, options.verbose], [true, true, true]);
+});
+
+test('--title overrides the derived document title (#59)', () => {
+  assert.equal(resolveOptions(parse(['--title', 'My Report', 'doc.md'])).title, 'My Report');
 });
 
 test('passes the directory options through unchanged', () => {
@@ -293,12 +334,18 @@ test('lists every tried location for an unknown stylesheet name (#34)', (t) => {
   });
 });
 
-test('rejects -p together with -r in either order and form (#60)', () => {
-  const conflict = /option '-p, --temp-in-output' cannot be used with option '-r, --temp-root <path>'/;
+test('rejects --temp-in-output together with --temp-root in either order, form and name (#60)', () => {
+  const conflict = /cannot be used with option/;
 
+  assert.throws(() => parse(['--temp-in-output', '--temp-root', 'scratch', 'doc.md']), conflict);
+  assert.throws(() => parse(['--temp-root', 'scratch', '--temp-in-output', 'doc.md']), conflict);
+  assert.throws(() => parse(['--temp-in-output', '--temp-root=scratch', 'doc.md']), conflict);
+  // The short flags are the previous names of the same two options (#59), so
+  // they have to conflict in every combination as well.
   assert.throws(() => parse(['-p', '-r', 'scratch', 'doc.md']), conflict);
   assert.throws(() => parse(['-r', 'scratch', '-p', 'doc.md']), conflict);
-  assert.throws(() => parse(['--temp-in-output', '--temp-root=scratch', 'doc.md']), conflict);
+  assert.throws(() => parse(['-p', '--temp-root', 'scratch', 'doc.md']), conflict);
+  assert.throws(() => parse(['--temp-in-output', '-r', 'scratch', 'doc.md']), conflict);
 });
 
 test('rejects -u together with --merge before any work starts (#60)', () => {
@@ -306,4 +353,13 @@ test('rejects -u together with --merge before any work starts (#60)', () => {
 
   assert.throws(() => resolveOptions(parse(['-u', '--merge', 'handbook', 'a.md', 'b.md'])), combined);
   assert.throws(() => resolveOptions(parse(['--merge=handbook', '--update-md-toc', 'a.md'])), combined);
+});
+
+test('rejects an empty -s value instead of falling back to the default (#55)', (t) => {
+  const config = tempDir(t);
+  writeFile(config, 'default.css', 'body {}\n');
+  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+
+  assert.throws(() => resolveOptions(parse(['-s', '', 'doc.md'])), /Empty -s\/--stylesheet value/);
+  assert.throws(() => resolveOptions(parse(['-s', '   ', 'doc.md'])), /Empty -s\/--stylesheet value/);
 });

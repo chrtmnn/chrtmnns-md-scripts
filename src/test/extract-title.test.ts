@@ -98,3 +98,40 @@ test('reads the pipeline input file, not the source file', (t) => {
 
   assert.equal(context.docTitle, 'Temp Copy Heading');
 });
+
+test('strips a UTF-8 BOM before scanning for the heading (#48)', (t) => {
+  const dir = tempDir(t);
+
+  assert.equal(titleOf(dir, '﻿# Real Title\n\ntext\n'), 'Real Title');
+  assert.equal(titleOf(dir, '﻿# Real Title\r\n\r\ntext\r\n'), 'Real Title');
+});
+
+test('a BOM does not turn a frontmatter key into the title (#48)', (t) => {
+  const dir = tempDir(t);
+  // Without stripping, `﻿---` is not a frontmatter delimiter, so
+  // `title: x` followed by `---` reads as a setext heading and the YAML key
+  // ends up as the PDF title.
+  const markdown = '﻿---\ntitle: x\n---\n\n# Real Title\n';
+
+  assert.equal(titleOf(dir, markdown), 'Real Title');
+});
+
+test('keeps the fallback title when the first heading has no text (#48)', (t) => {
+  const dir = tempDir(t);
+  const file = writeFile(dir, 'my-report.md', '#\n\nbody\n');
+  const context = makeContext({ sourceFile: file, inputMarkdown: file });
+
+  extractTitle(context);
+
+  assert.equal(context.docTitle, 'my-report');
+});
+
+test('keeps the fallback title for a closing-hash-only heading (#48)', (t) => {
+  const dir = tempDir(t);
+  const file = writeFile(dir, 'my-report.md', '## #\n\nbody\n');
+  const context = makeContext({ sourceFile: file, inputMarkdown: file });
+
+  extractTitle(context);
+
+  assert.equal(context.docTitle, 'my-report');
+});

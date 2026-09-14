@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ConversionContext, ConverterOptions } from '../types';
-import { deriveOutputPaths } from './output-targets';
+import { deriveOutputPaths, shortenStemForTemp } from './output-targets';
 
 /**
  * Creates the per-file conversion context and temporary work directory.
@@ -20,21 +20,29 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
   const baseName = path.basename(sourceFile);
   const sourceDir = path.dirname(absSrc);
   const { stem, targetDir, outputPdf, outputHtml } = deriveOutputPaths(absSrc, options.outputDir);
+  // Every generated name is built from the shortened stem, so a very long
+  // source file name cannot push a temp name past the filesystem's limit and
+  // fail the run with a raw ENAMETOOLONG (#55).
+  // Before the work directory, not after: an unusable `-o` (a path that is a
+  // file, say) used to fail *after* `mkdtempSync` had already created the
+  // work directory, which nothing then removed (#51).
+  fs.mkdirSync(targetDir, { recursive: true });
 
-  let workdir: string;
+  let base: string;
   if (options.tempInOutput) {
-    const baseOut = options.outputDir ? path.resolve(options.outputDir) : sourceDir;
-    fs.mkdirSync(baseOut, { recursive: true });
-    workdir = fs.mkdtempSync(path.join(baseOut, `${stem}_`));
+    base = options.outputDir ? path.resolve(options.outputDir) : sourceDir;
   } else if (options.tempRoot) {
-    const tempRoot = path.resolve(options.tempRoot);
-    fs.mkdirSync(tempRoot, { recursive: true });
-    workdir = fs.mkdtempSync(path.join(tempRoot, `${stem}_`));
+    base = path.resolve(options.tempRoot);
   } else {
-    workdir = fs.mkdtempSync(path.join(os.tmpdir(), `${stem}_`));
+    base = os.tmpdir();
   }
 
-  fs.mkdirSync(targetDir, { recursive: true });
+  // The base directory is part of the budget: Windows limits the whole path,
+  // so a deep `-o` leaves less room for the generated names (#55).
+  const tempStem = shortenStemForTemp(stem, base);
+
+  fs.mkdirSync(base, { recursive: true });
+  const workdir = fs.mkdtempSync(path.join(base, `${tempStem}_`));
 
   return {
     options,
@@ -44,12 +52,12 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
     stem,
     workdir,
     inputMarkdown: absSrc,
-    convertedMarkdown: path.join(workdir, `${stem}_converted.md`),
+    convertedMarkdown: path.join(workdir, `${tempStem}_converted.md`),
     targetDir,
     outputPdf,
-    tempPdf: path.join(workdir, `${stem}_converted.pdf`),
+    tempPdf: path.join(workdir, `${tempStem}_converted.pdf`),
     outputHtml,
-    tempHtml: path.join(workdir, `${stem}_converted.html`),
+    tempHtml: path.join(workdir, `${tempStem}_converted.html`),
     docTitle: stem,
   };
 }

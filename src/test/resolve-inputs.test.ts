@@ -9,6 +9,7 @@ import path from 'path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveInputs } from '../steps/resolve-inputs';
+import { POSIX_PATH_RULES, WINDOWS_PATH_RULES } from '../steps/path-rules';
 import { comparablePath, makeOptions, names, tempDir, tryJunction, trySymlink, writeFile } from './helpers';
 
 test('keeps file positionals and forwards missing ones verbatim', (t) => {
@@ -149,20 +150,20 @@ test('deduplicates a differently spelled path of the same file', (t) => {
   assert.deepEqual(files, [file]);
 });
 
-test('deduplicates case-insensitively on Windows only', (t) => {
+test('deduplicates case-insensitively under Windows rules (#50)', (t) => {
   const dir = tempDir(t);
   const file = writeFile(dir, 'Doc.md', '# Doc');
   const upperCased = path.join(dir, 'DOC.MD');
 
-  const { files } = resolveInputs([file, upperCased], makeOptions());
-
-  if (process.platform === 'win32') {
-    assert.deepEqual(files, [file], 'the same file spelled two ways is converted once');
-  } else {
-    // On a case-sensitive filesystem `DOC.MD` is a different, missing file and
-    // is forwarded verbatim for the "Skipped missing file" warning.
-    assert.deepEqual(files, [file, upperCased]);
-  }
+  // Passing the rules in runs the Windows branch on every runner; on a
+  // case-sensitive filesystem `DOC.MD` does not exist, so it is forwarded
+  // verbatim and only the key comparison decides.
+  assert.deepEqual(
+    resolveInputs([file, upperCased], makeOptions(), WINDOWS_PATH_RULES).files,
+    [file],
+    'the same file spelled two ways is converted once',
+  );
+  assert.deepEqual(resolveInputs([file, upperCased], makeOptions(), POSIX_PATH_RULES).files, [file, upperCased]);
 });
 
 test('an empty directory produces a warning, not a failure', (t) => {
@@ -249,4 +250,22 @@ test('an explicitly passed symlinked file is followed', (t) => {
   const { files } = resolveInputs([link], makeOptions());
 
   assert.deepEqual(files, [link], 'the user-supplied spelling is preserved');
+});
+
+test('a symlink and its target are the same file and converted once (#49)', (t) => {
+  const dir = tempDir(t);
+  const real = writeFile(dir, 'real.md', '# Real');
+  const link = path.join(dir, 'link.md');
+
+  if (!trySymlink(real, link, 'file')) {
+    t.skip('creating symlinks requires Developer Mode or elevation on Windows');
+    return;
+  }
+
+  assert.deepEqual(resolveInputs([real, link], makeOptions()).files, [real]);
+  assert.deepEqual(
+    resolveInputs([link, real], makeOptions()).files,
+    [link],
+    'the first spelling given wins',
+  );
 });

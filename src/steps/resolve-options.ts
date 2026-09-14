@@ -2,8 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Command } from 'commander';
-import { ConverterOptions } from '../types';
-import { parseCssVars, parseMergeName } from './option-values';
+import { ConverterOptions, TocMode } from '../types';
+import { parseCssVars, parseMergeName, translateLegacyCssVars } from './option-values';
 import { chooseStylesheet, configDirectory, INVOCATION_DIR_ENV } from './stylesheet-lookup';
 
 /**
@@ -21,12 +21,19 @@ type RawOptions = {
   stylesheet?: string;
   cssVar: string[];
   outputDir?: string;
+  title?: string;
   tempRoot?: string;
+  tempRootAlias?: string;
   tempInOutput?: boolean;
+  tempInOutputAlias?: boolean;
+  toc?: boolean;
   forceDoctoc?: boolean;
+  writeToc?: boolean;
   updateMdToc?: boolean;
   keepTemp?: boolean;
+  keepTempAlias?: boolean;
   verbose?: boolean;
+  html?: boolean;
   debug?: boolean;
   png?: boolean;
   recursive?: boolean;
@@ -45,6 +52,25 @@ export function collect(value: string, previous: string[]): string[] {
 }
 
 /**
+ * Folds `--toc` / `--no-toc` and the previous `-f/--force-doctoc` into one
+ * mode.
+ *
+ * Commander reports `toc` as `undefined` when neither flag is given, which is
+ * the automatic behaviour: doctoc runs exactly for a source that carries
+ * genuine markers.
+ *
+ * @param rawOptions - Parsed Commander options.
+ * @returns The table-of-contents mode for the run.
+ */
+function resolveTocMode(rawOptions: RawOptions): TocMode {
+  if (rawOptions.toc === false) {
+    return 'never';
+  }
+
+  return rawOptions.toc === true || rawOptions.forceDoctoc ? 'always' : 'auto';
+}
+
+/**
  * Resolves and validates raw Commander options into the internal options shape.
  *
  * @param program - Parsed Commander program instance.
@@ -53,13 +79,20 @@ export function collect(value: string, previous: string[]): string[] {
 export function resolveOptions(program: Command): ConverterOptions {
   const rawOptions = program.opts<RawOptions>();
 
+  // `--debug` is the previous name of `--html` and now means "tell me
+  // everything": the HTML file, the temp directory and the tool output (#59).
+  const debug = Boolean(rawOptions.debug);
+  const writeToc = Boolean(rawOptions.writeToc || rawOptions.updateMdToc);
+
   // A merged run converts a temporary concatenation, so `-u` would refresh
   // that copy and leave every source file unchanged (#60).
-  if (rawOptions.updateMdToc && rawOptions.merge !== undefined) {
+  if (writeToc && rawOptions.merge !== undefined) {
     throw new Error(
       '-u cannot be combined with --merge: a merged run converts a temporary concatenation of the files, so no source file would be updated.',
     );
   }
+
+  const { cssVars, warnings: cssVarWarnings } = translateLegacyCssVars(parseCssVars(rawOptions.cssVar));
 
   // Relative values and bare names refer to the caller's directory, which the
   // global wrapper passes in because it runs pnpm from the repo root.
@@ -76,15 +109,17 @@ export function resolveOptions(program: Command): ConverterOptions {
   return {
     stylesheet: chosenStylesheet.path,
     stylesheetOrigin: chosenStylesheet.origin,
-    cssVars: parseCssVars(rawOptions.cssVar),
+    cssVars,
+    cssVarWarnings,
     outputDir: rawOptions.outputDir,
-    tempRoot: rawOptions.tempRoot,
-    tempInOutput: Boolean(rawOptions.tempInOutput),
-    forceDoctoc: Boolean(rawOptions.forceDoctoc),
-    updateMdToc: Boolean(rawOptions.updateMdToc),
-    keepTemp: Boolean(rawOptions.keepTemp),
-    verbose: Boolean(rawOptions.verbose),
-    debug: Boolean(rawOptions.debug),
+    title: rawOptions.title,
+    tempRoot: rawOptions.tempRoot ?? rawOptions.tempRootAlias,
+    tempInOutput: Boolean(rawOptions.tempInOutput || rawOptions.tempInOutputAlias),
+    toc: resolveTocMode(rawOptions),
+    writeToc,
+    keepTemp: Boolean(rawOptions.keepTemp || rawOptions.keepTempAlias || debug),
+    verbose: Boolean(rawOptions.verbose || debug),
+    html: Boolean(rawOptions.html || debug),
     png: Boolean(rawOptions.png),
     recursive: Boolean(rawOptions.recursive),
     merge: rawOptions.merge === undefined ? undefined : parseMergeName(rawOptions.merge),

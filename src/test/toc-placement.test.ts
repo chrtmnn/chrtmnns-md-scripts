@@ -170,3 +170,42 @@ test('handles a TOC block that doctoc placed inside the frontmatter region', () 
 
   assert.equal(output, doc(['---', 'title: Doc', '---', '', 'Intro.', '', ...TOC_BLOCK, '', '## Second']));
 });
+
+test('a leading BOM neither hides the frontmatter nor is lost (#48)', () => {
+  const body = doc(['---', 'title: Doc', '---', '', ...TOC_BLOCK, '', 'Intro.', '', '## Second']);
+  const expected = doc(['---', 'title: Doc', '---', '', 'Intro.', '', ...TOC_BLOCK, '', '## Second']);
+
+  const output = relocateTocBeforeFirstH2(`﻿${body}`);
+
+  assert.equal(output, `﻿${expected}`);
+});
+
+test('a leading BOM does not hide a setext h2 from the placement scan (#48)', () => {
+  const body = doc(['Title', '=====', '', ...TOC_BLOCK, '', 'Intro.', '', 'Second', '------']);
+  const expected = doc(['Title', '=====', '', 'Intro.', '', ...TOC_BLOCK, '', 'Second', '------']);
+
+  assert.equal(relocateTocBeforeFirstH2(`﻿${body}`), `﻿${expected}`);
+});
+
+test('a documented marker pair inside a fence is not mistaken for the TOC (#47)', () => {
+  const input = doc([
+    '# Title',
+    '',
+    '```markdown',
+    ...TOC_BLOCK,
+    '```',
+    '',
+    ...TOC_BLOCK,
+    '',
+    'Intro.',
+    '',
+    '## Second',
+  ]);
+
+  const output = relocateTocBeforeFirstH2(input);
+
+  assert.equal(
+    output,
+    doc(['# Title', '', '```markdown', ...TOC_BLOCK, '```', '', 'Intro.', '', ...TOC_BLOCK, '', '## Second']),
+  );
+});

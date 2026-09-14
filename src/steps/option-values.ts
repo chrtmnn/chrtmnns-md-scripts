@@ -26,8 +26,14 @@ export function parseMergeName(value: string): string {
     throw new Error(`Invalid --merge name: ${value}. Expected a PDF base name.`);
   }
 
-  if (/[<>:"/\\|?*]/.test(name)) {
+  if (/[/\\]/.test(name) || /^[A-Za-z]:/.test(name)) {
     throw new Error(`Invalid --merge name: ${value}. Expected a plain file name without path separators.`);
+  }
+
+  if (/[<>:"|?*]/.test(name)) {
+    throw new Error(
+      `Invalid --merge name: ${value}. Expected a plain file name without the characters <>:"|?*.`,
+    );
   }
 
   return name;
@@ -35,6 +41,9 @@ export function parseMergeName(value: string): string {
 
 /**
  * Parses `--css-var name=value` entries into normalized CSS custom properties.
+ *
+ * A value that could escape the generated `:root {}` block is rejected: `{`,
+ * `}`, `;` and a comment delimiter (`/*`, `*` + `/`).
  *
  * @param values - Raw CLI values collected from `--css-var`.
  * @returns Validated CSS variable overrides.
@@ -54,10 +63,66 @@ export function parseCssVars(values: string[]): CssVarOverride[] {
       throw new Error(`Invalid CSS variable name: ${rawName}`);
     }
 
-    if (!value || /[{};]/.test(value)) {
+    // `/*` escapes the generated `:root {}` block as thoroughly as `}` does:
+    // it comments out the rest of the block, so every later override — and
+    // the closing brace — silently disappears (#46).
+    if (!value || /[{};]/.test(value) || value.includes('/*') || value.includes('*/')) {
       throw new Error(`Invalid CSS variable value for ${rawName}: ${value}`);
     }
 
     return { name: `--${name}`, value };
   });
+}
+
+/**
+ * Page-break variables that were replaced by their modern counterpart (#59).
+ *
+ * `default.css` used to define two custom properties per concept — a legacy
+ * `page-break-before` one and a modern `break-before` one — so enabling a
+ * break took two `--css-var` flags that had to agree. Chromium, the only
+ * renderer involved, honours `break-before`, so the modern name is the only
+ * one left and the legacy name is translated for a transition period.
+ */
+const LEGACY_CSS_VARS: Record<string, string> = {
+  '--heading-page-break-before': '--heading-break-before',
+  '--first-heading-page-break-before': '--first-heading-break-before',
+  '--document-page-break-before': '--document-break-before',
+};
+
+/**
+ * `page-break-before` values and what they are called in `break-before`.
+ * Anything not listed means the same in both properties.
+ */
+const LEGACY_CSS_VALUES: Record<string, string> = {
+  always: 'page',
+};
+
+/**
+ * Rewrites overrides that use a retired page-break variable name.
+ *
+ * @param cssVars - Parsed overrides, in the order they were given.
+ * @returns The overrides with legacy names translated, and one warning per
+ *   translated override.
+ */
+export function translateLegacyCssVars(cssVars: CssVarOverride[]): {
+  cssVars: CssVarOverride[];
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+
+  const translated = cssVars.map((override) => {
+    const name = LEGACY_CSS_VARS[override.name];
+    if (!name) {
+      return override;
+    }
+
+    const value = LEGACY_CSS_VALUES[override.value.toLowerCase()] ?? override.value;
+    warnings.push(
+      `${override.name} is deprecated; using ${name}=${value} instead. One variable per concept is enough since #59.`,
+    );
+
+    return { name, value };
+  });
+
+  return { cssVars: translated, warnings };
 }

@@ -1,7 +1,8 @@
 /**
- * Behaviour of the pure parts of `--merge` (#6): BOM stripping, the common
- * ancestor directory the merged PDF defaults to, and how document bodies are
- * glued together.
+ * Behaviour of the pure parts of `--merge` (#6): the common ancestor
+ * directory the merged PDF defaults to, and how document bodies are glued
+ * together. BOM stripping moved to `markdown-scan.test.ts` with the function
+ * itself (#48).
  */
 
 import path from 'path';
@@ -11,8 +12,9 @@ import {
   DOCUMENT_BREAK_HTML,
   commonAncestorDirectory,
   joinDocuments,
-  stripBom,
+  removeFrontmatter,
 } from '../steps/merge-assembly';
+import { POSIX_PATH_RULES, WINDOWS_PATH_RULES } from '../steps/path-rules';
 
 /**
  * Builds an absolute path from segments in a platform-correct way, so the same
@@ -24,13 +26,6 @@ import {
 function absolute(...segments: string[]): string {
   return path.join(path.parse(process.cwd()).root, ...segments);
 }
-
-test('stripBom removes only a leading BOM', () => {
-  assert.equal(stripBom('\uFEFF# Title'), '# Title');
-  assert.equal(stripBom('# Title'), '# Title');
-  assert.equal(stripBom('# Title\uFEFF'), '# Title\uFEFF');
-  assert.equal(stripBom(''), '');
-});
 
 test('commonAncestorDirectory returns the shared directory of the inputs', () => {
   const files = [absolute('docs', 'a.md'), absolute('docs', 'b.md')];
@@ -52,27 +47,43 @@ test('commonAncestorDirectory is that file own directory for a single input', ()
   assert.equal(commonAncestorDirectory([absolute('docs', 'only.md')]), absolute('docs'));
 });
 
-test('commonAncestorDirectory compares segments case-insensitively on Windows', () => {
-  const files = [absolute('Docs', 'a.md'), absolute('docs', 'b.md')];
-  const ancestor = commonAncestorDirectory(files);
-
-  if (process.platform === 'win32') {
-    assert.equal(ancestor.toLowerCase(), absolute('docs').toLowerCase());
-  } else {
-    // Case-sensitive filesystem: the two directories share only the root.
-    assert.equal(ancestor, path.sep);
-  }
+test('commonAncestorDirectory compares segments case-insensitively under Windows rules (#50)', () => {
+  assert.equal(
+    commonAncestorDirectory(['C:\\Docs\\a.md', 'C:\\docs\\b.md'], WINDOWS_PATH_RULES).toLowerCase(),
+    'c:\\docs',
+  );
 });
 
-test('commonAncestorDirectory falls back to the working directory across drives', (t) => {
-  if (process.platform !== 'win32') {
-    t.skip('only Windows paths can lack a common root');
-    return;
-  }
+test('commonAncestorDirectory compares segments case-sensitively under POSIX rules (#50)', () => {
+  assert.equal(commonAncestorDirectory(['/Docs/a.md', '/docs/b.md'], POSIX_PATH_RULES), '/');
+});
 
-  const files = ['C:\\docs\\a.md', 'D:\\docs\\b.md'];
+test('commonAncestorDirectory falls back to the working directory across drives (#50)', () => {
+  assert.equal(commonAncestorDirectory(['C:\\docs\\a.md', 'D:\\docs\\b.md'], WINDOWS_PATH_RULES), process.cwd());
+});
 
-  assert.equal(commonAncestorDirectory(files), process.cwd());
+test('commonAncestorDirectory returns an absolute path at the drive root (#50)', () => {
+  // `C:` alone is drive-*relative*: path.win32.resolve('C:') is the current
+  // directory of drive C:, so the merged PDF landed in the working directory.
+  assert.equal(commonAncestorDirectory(['C:\\a\\x.md', 'C:\\b\\y.md'], WINDOWS_PATH_RULES), 'C:\\');
+  assert.equal(commonAncestorDirectory(['C:\\x.md', 'C:\\a\\y.md'], WINDOWS_PATH_RULES), 'C:\\');
+  assert.equal(commonAncestorDirectory(['C:\\x.md', 'C:\\y.md'], WINDOWS_PATH_RULES), 'C:\\');
+});
+
+test('commonAncestorDirectory keeps a UNC share and rejects a bare server (#50)', () => {
+  assert.equal(
+    commonAncestorDirectory(['\\\\srv\\share\\a\\x.md', '\\\\srv\\share\\b\\y.md'], WINDOWS_PATH_RULES),
+    '\\\\srv\\share',
+  );
+  assert.equal(
+    commonAncestorDirectory(['\\\\srv\\one\\x.md', '\\\\srv\\two\\y.md'], WINDOWS_PATH_RULES),
+    process.cwd(),
+    'a server without a share is no directory',
+  );
+});
+
+test('commonAncestorDirectory returns the POSIX root when only it is shared (#50)', () => {
+  assert.equal(commonAncestorDirectory(['/a/x.md', '/b/y.md'], POSIX_PATH_RULES), '/');
 });
 
 test('joinDocuments separates documents with a blank-line-wrapped break block', () => {
@@ -89,4 +100,20 @@ test('joinDocuments adds no separator for a single document', () => {
 test('joinDocuments always terminates the merged file with exactly one newline', () => {
   assert.equal(joinDocuments(['a', 'b']).endsWith('b\n'), true);
   assert.equal(joinDocuments(['a', 'b']).endsWith('\n\n'), false);
+});
+
+test('removeFrontmatter drops a leading block and reports it (#49)', () => {
+  assert.deepEqual(removeFrontmatter('---\ntitle: B\n---\n\n# B\n'), { body: '# B\n', removed: true });
+  assert.deepEqual(removeFrontmatter('# B\n'), { body: '# B\n', removed: false });
+  assert.deepEqual(removeFrontmatter('text\n\n---\ntitle: not frontmatter\n---\n'), {
+    body: 'text\n\n---\ntitle: not frontmatter\n---\n',
+    removed: false,
+  });
+});
+
+test('joinDocuments skips an empty document instead of emitting two breaks (#49)', () => {
+  const merged = joinDocuments(['# A', '', '# C']);
+
+  assert.equal(merged, `# A\n\n${DOCUMENT_BREAK_HTML}\n\n# C\n`);
+  assert.equal(merged.split(DOCUMENT_BREAK_HTML).length - 1, 1);
 });
