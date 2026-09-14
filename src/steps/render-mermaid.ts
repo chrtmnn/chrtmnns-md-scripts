@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { ConversionContext } from '../types';
-import { runNpx } from './run-npx';
+import { runTool } from './run-tool';
 
 const MERMAID_FENCE_RE = /^[ \t]{0,3}(?:```|~~~)\s*mermaid\b/m;
 
@@ -30,11 +30,11 @@ export function hasMermaidFences(filePath: string): boolean {
  * @param context - Mutable conversion state for the current source file.
  */
 export function renderMermaid(context: ConversionContext): void {
-  const args = [context.options.packages.mermaidCli, '-i', context.inputMarkdown, '-o', context.convertedMarkdown];
+  const args = ['-i', context.inputMarkdown, '-o', context.convertedMarkdown];
 
   if (context.options.png) {
     args.push('-e', 'png', '-s', String(PNG_PRINT_SCALE));
   }
 
-  runNpx(args, { verbose: context.options.verbose });
+  runTool('mermaidCli', args, context.options);
 }

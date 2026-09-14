@@ -25,8 +25,8 @@ function parse(args: string[]): Command {
 
 /**
  * Sets or removes (`undefined`) environment variables for one test and
- * restores the caller's values afterwards, so a developer's own settings —
- * or a value left behind by the global wrapper — cannot leak in.
+ * restores the caller's values afterwards, so a developer's own settings
+ * cannot leak in.
  */
 function withEnv(t: TestContext, values: Record<string, string | undefined>): void {
   const saved = Object.keys(values).map((name) => [name, process.env[name]] as const);
@@ -51,21 +51,42 @@ function setEnv(name: string, value: string | undefined): void {
 }
 
 /**
- * Points both directory variables at throwaway locations before every test in
- * this file.
+ * Moves the process into a fresh temp directory for one test and back out
+ * afterwards. `resolveOptions` resolves `-s` against `process.cwd()`, the
+ * directory an npm-installed `md2pdf` is called from (#56).
+ *
+ * The way back is registered before the directory's removal, because
+ * after-hooks run in registration order and Windows refuses to remove the
+ * working directory of a live process.
+ */
+function enterTempDir(t: TestContext): string {
+  const previous = process.cwd();
+  t.after(() => process.chdir(previous));
+
+  const directory = tempDir(t);
+  process.chdir(directory);
+  return directory;
+}
+
+/**
+ * Moves into a throwaway working directory and points `MD2PDF_CONFIG_DIR` at
+ * a throwaway location before every test in this file.
  *
  * Without `MD2PDF_CONFIG_DIR`, `chooseStylesheet` falls back to the real
  * `~/.md2pdf` and stats the developer's own `default.css`, which would make
  * any test that later asserts on `stylesheet`/`stylesheetOrigin` depend on the
- * machine it runs on. Doing it here rather than per test makes the guarantee
- * structural: a new test cannot forget it. Tests that need a specific
- * directory still call `withEnv` and win, because it runs afterwards.
+ * machine it runs on; without the working directory, a `-s` value would be
+ * looked up wherever the suite was started. Doing it here rather than per test
+ * makes the guarantee structural: a new test cannot forget it. Tests that need
+ * a specific config directory still call `withEnv` and win, because it runs
+ * afterwards.
  */
 beforeEach((context) => {
   // Registered at file level, so the hook only ever runs for a test; the
   // declared `TestContext | SuiteContext` covers hooks inside a `describe`.
   const t = context as TestContext;
-  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t), MD2PDF_INVOCATION_DIR: tempDir(t) });
+  enterTempDir(t);
+  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t) });
 });
 
 /**
@@ -116,7 +137,7 @@ test('rejects a stylesheet that does not exist', (t) => {
 test('uses default.css from the config directory when no -s is given (#40)', (t) => {
   const config = tempDir(t);
   const personal = writeFile(config, 'default.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   const options = resolveOptions(parse(['doc.md']));
 
@@ -128,7 +149,7 @@ test('-s default forces the bundled stylesheet over a personal one (#40)', (t) =
   const config = tempDir(t);
   writeFile(config, 'default.css', 'body {}\n');
   writeFile(config, 'default', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   const options = resolveOptions(parse(['-s', 'default', 'doc.md']));
 
@@ -142,7 +163,7 @@ test('-s default forces the bundled stylesheet over a personal one (#40)', (t) =
 test('-s default.css still selects the personal default (#40)', (t) => {
   const config = tempDir(t);
   const personal = writeFile(config, 'default.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   const options = resolveOptions(parse(['-s', 'default.css', 'doc.md']));
 
@@ -154,7 +175,7 @@ test('a personal default.css never overrides an explicit -s (#40)', (t) => {
   const config = tempDir(t);
   writeFile(config, 'default.css', 'body {}\n');
   const custom = writeFile(config, 'custom.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   assert.equal(resolveOptions(parse(['-s', 'custom', 'doc.md'])).stylesheet, custom);
   assert.equal(resolveOptions(parse(['-s', 'custom', 'doc.md'])).stylesheetOrigin, 'option');
@@ -234,24 +255,20 @@ test('normalises the --merge name', () => {
   assert.equal(resolveOptions(parse(['--merge', 'report.pdf', 'doc.md'])).merge, 'report');
 });
 
-test('uses the pinned package versions without overrides', (t) => {
+test('runs every tool from the installed dependency without overrides (#56)', (t) => {
   withPackageEnv(t, {});
 
-  assert.deepEqual(resolveOptions(parse(['doc.md'])).packages, {
-    doctoc: 'doctoc@2.3.0',
-    mermaidCli: '@mermaid-js/mermaid-cli@11.12.0',
-    mdToPdf: 'md-to-pdf@5.2.5',
-  });
+  assert.deepEqual(resolveOptions(parse(['doc.md'])).packageOverrides, {});
 });
 
-test('takes package selectors from the environment', (t) => {
+test('takes npx package selectors from the environment', (t) => {
   withPackageEnv(t, {
     DOCTOC_PKG: 'doctoc@latest',
     MERMAID_CLI_PKG: '@mermaid-js/mermaid-cli@10.0.0',
     MD_TO_PDF_PKG: 'md-to-pdf@5.0.0',
   });
 
-  assert.deepEqual(resolveOptions(parse(['doc.md'])).packages, {
+  assert.deepEqual(resolveOptions(parse(['doc.md'])).packageOverrides, {
     doctoc: 'doctoc@latest',
     mermaidCli: '@mermaid-js/mermaid-cli@10.0.0',
     mdToPdf: 'md-to-pdf@5.0.0',
@@ -261,27 +278,11 @@ test('takes package selectors from the environment', (t) => {
 test('treats an empty package variable as unset', (t) => {
   withPackageEnv(t, { DOCTOC_PKG: '' });
 
-  assert.equal(resolveOptions(parse(['doc.md'])).packages.doctoc, 'doctoc@2.3.0');
+  assert.deepEqual(resolveOptions(parse(['doc.md'])).packageOverrides, {});
 });
 
-test('resolves a relative stylesheet against MD2PDF_INVOCATION_DIR (#34)', (t) => {
-  const caller = tempDir(t);
-  const stylesheet = writeFile(caller, 'local.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t), MD2PDF_INVOCATION_DIR: caller });
-
-  assert.equal(resolveOptions(parse(['-s', 'local.css', 'doc.md'])).stylesheet, stylesheet);
-});
-
-test('falls back to the process working directory without MD2PDF_INVOCATION_DIR (#34)', (t) => {
-  // Registered first because after-hooks run in registration order: the
-  // process has to leave the temp directory before Windows lets it be removed.
-  const previous = process.cwd();
-  t.after(() => process.chdir(previous));
-
-  const caller = tempDir(t);
-  const stylesheet = writeFile(caller, 'local.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: tempDir(t), MD2PDF_INVOCATION_DIR: undefined });
-  process.chdir(caller);
+test('resolves a relative stylesheet against the working directory (#34)', () => {
+  const stylesheet = writeFile(process.cwd(), 'local.css', 'body {}\n');
 
   assert.equal(
     comparablePath(resolveOptions(parse(['-s', 'local.css', 'doc.md'])).stylesheet!),
@@ -292,42 +293,39 @@ test('falls back to the process working directory without MD2PDF_INVOCATION_DIR 
 test('falls back to a named stylesheet in the config directory, with or without .css (#34)', (t) => {
   const config = tempDir(t);
   const custom = writeFile(config, 'custom.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   assert.equal(resolveOptions(parse(['-s', 'custom.css', 'doc.md'])).stylesheet, custom);
   assert.equal(resolveOptions(parse(['-s', 'custom', 'doc.md'])).stylesheet, custom);
 });
 
-test('prefers the invocation directory over the config directory (#34)', (t) => {
-  const caller = tempDir(t);
+test('prefers the working directory over the config directory (#34)', (t) => {
   const config = tempDir(t);
-  const local = writeFile(caller, 'local.css', 'body {}\n');
+  const local = writeFile(process.cwd(), 'local.css', 'body {}\n');
   writeFile(config, 'local.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: caller });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   assert.equal(resolveOptions(parse(['-s', 'local.css', 'doc.md'])).stylesheet, local);
 });
 
 test('skips a directory that carries the stylesheet name (#34)', (t) => {
-  const caller = tempDir(t);
   const config = tempDir(t);
-  writeFile(caller, 'custom.css/keep', '');
+  writeFile(process.cwd(), 'custom.css/keep', '');
   const custom = writeFile(config, 'custom.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: caller });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   assert.equal(resolveOptions(parse(['-s', 'custom.css', 'doc.md'])).stylesheet, custom);
 });
 
 test('lists every tried location for an unknown stylesheet name (#34)', (t) => {
-  const caller = tempDir(t);
   const config = tempDir(t);
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: caller });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   assert.throws(() => resolveOptions(parse(['-s', 'missing', 'doc.md'])), {
     message: [
       'Stylesheet not found: missing',
       'Tried:',
-      `  - ${path.join(caller, 'missing')}`,
+      `  - ${path.join(process.cwd(), 'missing')}`,
       `  - ${path.join(config, 'missing')}`,
       `  - ${path.join(config, 'missing.css')}`,
     ].join('\n'),
@@ -358,7 +356,7 @@ test('rejects -u together with --merge before any work starts (#60)', () => {
 test('rejects an empty -s value instead of falling back to the default (#55)', (t) => {
   const config = tempDir(t);
   writeFile(config, 'default.css', 'body {}\n');
-  withEnv(t, { MD2PDF_CONFIG_DIR: config, MD2PDF_INVOCATION_DIR: tempDir(t) });
+  withEnv(t, { MD2PDF_CONFIG_DIR: config });
 
   assert.throws(() => resolveOptions(parse(['-s', '', 'doc.md'])), /Empty -s\/--stylesheet value/);
   assert.throws(() => resolveOptions(parse(['-s', '   ', 'doc.md'])), /Empty -s\/--stylesheet value/);

@@ -1,9 +1,11 @@
 import { execFileSync } from 'child_process';
-import { existsSync } from 'fs';
-import { formatExecError, locateNpxInvocation, NpxInvocation } from './npx-invocation';
+import fs from 'fs';
+import { PackageOverrides, ToolName } from '../types';
+import { formatExecError, resolveToolInvocation, ToolEnvironment } from './tool-invocation';
 
-type RunNpxOptions = {
+type RunToolOptions = {
   verbose: boolean;
+  packageOverrides: PackageOverrides;
 };
 
 /**
@@ -26,6 +28,27 @@ const DEFAULT_TOOL_TIMEOUT_MS = 10 * 60 * 1000;
 const OUTPUT_BUFFER_BYTES = 64 * 1024 * 1024;
 
 /**
+ * The running process and its filesystem, for {@link resolveToolInvocation}.
+ *
+ * Packages are searched from this module's own directory, which is where
+ * `require('<package>')` would resolve from: the checkout's `node_modules` in
+ * development, the package's own dependencies once installed.
+ */
+const PROCESS_ENVIRONMENT: ToolEnvironment = {
+  platform: process.platform,
+  execPath: process.execPath,
+  exists: fs.existsSync,
+  searchPaths: (packageName) => require.resolve.paths(packageName) ?? [],
+  readFile: (file) => {
+    try {
+      return fs.readFileSync(file, 'utf8');
+    } catch {
+      return undefined;
+    }
+  },
+};
+
+/**
  * Resolves the tool timeout from the environment.
  *
  * @param env - Environment to read `MD2PDF_TOOL_TIMEOUT` from.
@@ -45,24 +68,28 @@ export function resolveToolTimeout(env: NodeJS.ProcessEnv = process.env): number
   return parsed === 0 ? undefined : parsed;
 }
 
-let cachedInvocation: NpxInvocation | undefined;
-
 /**
- * Runs an npx command with optional inherited stdio.
+ * Runs one conversion tool with optional inherited stdio.
  *
- * Arguments are passed as an array and the child process is spawned without a
- * shell, so no value is ever reinterpreted by `cmd.exe` or `/bin/sh`.
+ * The tool is the installed dependency, or npx for a `*_PKG` override (see
+ * {@link resolveToolInvocation}). Arguments are passed as an array and the
+ * child process is spawned without a shell, so no value is ever reinterpreted
+ * by `cmd.exe` or `/bin/sh`.
  *
  * The child is given a wall-clock timeout and a generous output buffer, so a
  * wedged Chromium ends the run instead of blocking it forever and a chatty
  * failure is not turned into an `ENOBUFS` error (#51).
  *
- * @param args - Package selector followed by arguments for the invoked CLI.
- * @param options - Output handling options for the external command.
+ * @param tool - Tool to run.
+ * @param args - Arguments for the tool's CLI.
+ * @param options - Output handling and the npx overrides of the run.
  */
-export function runNpx(args: string[], options: RunNpxOptions): void {
-  cachedInvocation ??= locateNpxInvocation(process.platform, process.execPath, existsSync);
-  const { file, leadingArgs } = cachedInvocation;
+export function runTool(tool: ToolName, args: string[], options: RunToolOptions): void {
+  const { file, leadingArgs, label } = resolveToolInvocation(
+    tool,
+    options.packageOverrides[tool],
+    PROCESS_ENVIRONMENT,
+  );
 
   try {
     execFileSync(file, [...leadingArgs, ...args], {
@@ -72,6 +99,6 @@ export function runNpx(args: string[], options: RunNpxOptions): void {
       stdio: options.verbose ? 'inherit' : 'pipe',
     });
   } catch (error) {
-    throw new Error(formatExecError(error, args[0]));
+    throw new Error(formatExecError(error, label));
   }
 }

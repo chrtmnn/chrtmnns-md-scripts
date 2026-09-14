@@ -24,6 +24,15 @@ export type StylesheetOrigin = 'option' | 'user-default' | 'bundled';
  */
 export type TocMode = 'auto' | 'always' | 'never';
 
+/** The external conversion tools a run starts. */
+export type ToolName = 'doctoc' | 'mermaidCli' | 'mdToPdf';
+
+/**
+ * npx package selectors from `DOCTOC_PKG`, `MERMAID_CLI_PKG` and
+ * `MD_TO_PDF_PKG`. A tool without one runs from the installed dependency.
+ */
+export type PackageOverrides = Partial<Record<ToolName, string>>;
+
 /**
  * Resolved CLI options shared by every conversion step.
  */
@@ -69,12 +78,8 @@ export type ConverterOptions = {
   merge?: string;
   /** Document title from `--title`, overriding the first heading and the `--merge` name. */
   title?: string;
-  /** Package selectors used for external npx invocations. */
-  packages: {
-    doctoc: string;
-    mermaidCli: string;
-    mdToPdf: string;
-  };
+  /** npx package selectors that replace the installed conversion tools. */
+  packageOverrides: PackageOverrides;
 };
 
 /**

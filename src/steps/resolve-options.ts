@@ -4,7 +4,8 @@ import path from 'path';
 import { Command } from 'commander';
 import { ConverterOptions, TocMode } from '../types';
 import { parseCssVars, parseMergeName, translateLegacyCssVars } from './option-values';
-import { chooseStylesheet, configDirectory, INVOCATION_DIR_ENV } from './stylesheet-lookup';
+import { chooseStylesheet, configDirectory } from './stylesheet-lookup';
+import { readPackageOverrides } from './tool-invocation';
 
 /**
  * Reports whether a path is an existing file. A directory that happens to
@@ -74,7 +75,7 @@ function resolveTocMode(rawOptions: RawOptions): TocMode {
  * Resolves and validates raw Commander options into the internal options shape.
  *
  * @param program - Parsed Commander program instance.
- * @returns Converter options with defaults, package selectors, and CSS overrides resolved.
+ * @returns Converter options with defaults, npx overrides, and CSS overrides resolved.
  */
 export function resolveOptions(program: Command): ConverterOptions {
   const rawOptions = program.opts<RawOptions>();
@@ -94,12 +95,12 @@ export function resolveOptions(program: Command): ConverterOptions {
 
   const { cssVars, warnings: cssVarWarnings } = translateLegacyCssVars(parseCssVars(rawOptions.cssVar));
 
-  // Relative values and bare names refer to the caller's directory, which the
-  // global wrapper passes in because it runs pnpm from the repo root.
+  // Relative values and bare names refer to the directory md2pdf was called
+  // from, which is the working directory of an npm-installed command (#56).
   const chosenStylesheet = chooseStylesheet(
     rawOptions.stylesheet,
     {
-      invocationDir: process.env[INVOCATION_DIR_ENV] || process.cwd(),
+      invocationDir: process.cwd(),
       configDir: configDirectory(process.env, os.homedir()),
       bundledStylesheet: path.resolve(__dirname, '..', 'css', 'default.css'),
     },
@@ -123,10 +124,6 @@ export function resolveOptions(program: Command): ConverterOptions {
     png: Boolean(rawOptions.png),
     recursive: Boolean(rawOptions.recursive),
     merge: rawOptions.merge === undefined ? undefined : parseMergeName(rawOptions.merge),
-    packages: {
-      doctoc: process.env.DOCTOC_PKG || 'doctoc@2.3.0',
-      mermaidCli: process.env.MERMAID_CLI_PKG || '@mermaid-js/mermaid-cli@11.12.0',
-      mdToPdf: process.env.MD_TO_PDF_PKG || 'md-to-pdf@5.2.5',
-    },
+    packageOverrides: readPackageOverrides(process.env),
   };
 }

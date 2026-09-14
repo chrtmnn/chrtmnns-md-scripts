@@ -31,16 +31,28 @@ The command shows a compact progress view, refreshes an existing doctoc table of
 
 Prerequisites:
 
-- Node.js with `npm`/`npx` available in `PATH`
-- Internet access on first use so `npx` can fetch the conversion tools
+- Node.js 22 or later
 
-Run the install script once from this repository:
+Install the command globally with npm:
 
 ```powershell
-.\scripts\install.ps1
+npm install --global @chrtmnn/md2pdf
 ```
 
-The script installs pnpm globally (with confirmation) if it is not already available, runs `pnpm install` if dependencies are missing, and adds the `bin/` directory to your user `PATH`. Restart your terminal afterwards. The `md2pdf` command is then available from any directory.
+The `md2pdf` command is then available from any directory, on Windows, macOS and Linux.
+
+The installation downloads a Chromium build for rendering, once. It comes from Puppeteer, a dependency of md-to-pdf and mermaid-cli, whose `postinstall` script stores it in `~/.cache/puppeteer` (`%USERPROFILE%\.cache\puppeteer` on Windows). md2pdf itself has no install script, and once installed, conversions need no network access.
+
+pnpm blocks dependency build scripts, so approve Puppeteer's download after installing with pnpm:
+
+```powershell
+pnpm add --global @chrtmnn/md2pdf
+pnpm approve-builds --global
+```
+
+Releases are published from GitHub Actions with a provenance attestation; the package page on npmjs.com links each version to the commit and the workflow run that built it.
+
+**Upgrading from the PowerShell wrapper**: earlier versions were run from a clone of this repository, installed with `scripts\install.ps1`. Remove that clone's `bin` folder from your user `PATH` (*Edit environment variables for your account*), then install the package as above.
 
 ## Usage
 
@@ -133,7 +145,7 @@ md2pdf --png README.md
 | `-o, --output-dir <dir>`     | Output directory for PDFs. Defaults to each Markdown file's directory, or to the common parent folder of all inputs with `--merge`. |
 | `--title <text>`             | Document title for the PDF metadata, instead of the first heading (or the `--merge` name).                |
 | `--html`                     | Also write a standalone HTML file next to the PDF using the same stylesheet. An existing HTML file that md2pdf did not generate is never overwritten (see [Output Files](#output-files)). |
-| `-s, --stylesheet <name\|path>` | Stylesheet for the generated PDF: a path, or the name of a stylesheet in `~/.md2pdf` (see [Personal Stylesheets](#personal-stylesheets)). `-s default` always means the bundled `src/css/default.css`. Without the option, `~/.md2pdf/default.css` is used when it exists, otherwise the bundled stylesheet. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
+| `-s, --stylesheet <name\|path>` | Stylesheet for the generated PDF: a path, or the name of a stylesheet in `~/.md2pdf` (see [Personal Stylesheets](#personal-stylesheets)). `-s default` always means the bundled `default.css`. Without the option, `~/.md2pdf/default.css` is used when it exists, otherwise the bundled stylesheet. Relative `@import` and `url()` references are resolved against the stylesheet's own folder. |
 | `--css-var <name=value>`     | Override a CSS custom property for this run. The leading `--` is optional. Repeat for multiple variables. A name the stylesheet never reads with `var()` produces a warning, which usually means a typo. |
 | `--toc`                      | Create or refresh a TOC on the temporary conversion copy, even without source TOC markers.                |
 | `--no-toc`                   | Never create or refresh a TOC, not even for a file that carries doctoc markers.                           |
@@ -151,13 +163,11 @@ Every previous option name still works, so existing scripts keep running: `-f`/`
 
 ## Uninstall
 
-Remove the wrapper from your user `PATH`:
-
 ```powershell
-.\scripts\uninstall.ps1
+npm uninstall --global @chrtmnn/md2pdf
 ```
 
-Restart your terminal afterwards.
+With pnpm, run `pnpm remove --global @chrtmnn/md2pdf` instead. The Chromium download stays in `~/.cache/puppeteer`; delete that folder too if no other tool uses it.
 
 ---
 
@@ -230,14 +240,20 @@ A `default.css` in the config folder is used whenever you pass no `-s` at all:
 
 ```powershell
 md2pdf report.md              # uses ~/.md2pdf/default.css when it exists
-md2pdf -s default report.md   # uses the bundled src/css/default.css for this run
+md2pdf -s default report.md   # uses the bundled default.css for this run
 md2pdf -s default.css report.md   # uses ~/.md2pdf/default.css explicitly
 ```
 
 It **replaces** the bundled stylesheet instead of adding to it, exactly like any other `-s` value, so everything the bundled file provides — the `@page` setup, the `.page-break` and `.document-break` helpers, and all the custom properties `--css-var` targets — has to come from your file. The simplest start is a copy:
 
 ```powershell
-Copy-Item <repo>\src\css\default.css $HOME\.md2pdf\default.css
+Copy-Item "$(npm root --global)\@chrtmnn\md2pdf\dist\css\default.css" $HOME\.md2pdf\default.css
+```
+
+On macOS and Linux:
+
+```bash
+cp "$(npm root --global)/@chrtmnn/md2pdf/dist/css/default.css" ~/.md2pdf/default.css
 ```
 
 `default` is reserved for the bundled stylesheet, so `-s default` never picks up `~/.md2pdf/default.css`; use `-s default.css` (or its path) for that. `--verbose` prints which stylesheet a run uses and why.

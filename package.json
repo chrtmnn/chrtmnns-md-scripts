@@ -1,13 +1,30 @@
 {
-  "name": "chrtmnns-md-scripts",
+  "name": "@chrtmnn/md2pdf",
   "version": "0.1.0",
-  "description": "Tools & scripts to create, edit and convert markdown files",
+  "description": "Convert Markdown to PDF from any terminal, with a table of contents and Mermaid diagrams",
+  "bin": {
+    "md2pdf": "dist/md2pdf.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "prepack": "pnpm build",
+    "pack:check": "node scripts/pack-check.mjs",
+    "pack:smoke": "node scripts/package-smoke.mjs",
     "md2pdf": "tsx src/md2pdf.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/test/*.test.ts\"",
     "test:coverage": "node --import tsx --enable-source-maps --experimental-test-coverage --test-coverage-exclude=\"src/test/**\" --test \"src/test/*.test.ts\"",
     "smoke": "tsx src/md2pdf.ts -u --css-var heading-break-before=page README.md"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "repository": {
     "type": "git",
@@ -21,17 +38,17 @@
     "pdf"
   ],
   "author": "C.J. Hartmann <c@hrtmnn.com>",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/chrtmnn/chrtmnns-md-scripts/issues"
   },
   "homepage": "https://github.com/chrtmnn/chrtmnns-md-scripts#readme",
   "dependencies": {
-    "@clack/prompts": "^1.4.0",
-    "@mermaid-js/mermaid-cli": "^11.12.0",
-    "commander": "^12.0.0",
-    "doctoc": "^2.3.0",
-    "md-to-pdf": "^5.2.5"
+    "@clack/prompts": "1.4.0",
+    "@mermaid-js/mermaid-cli": "11.12.0",
+    "commander": "12.1.0",
+    "doctoc": "2.3.0",
+    "md-to-pdf": "5.2.5"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",

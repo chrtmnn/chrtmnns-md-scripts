@@ -7,7 +7,7 @@ import {
   scanDoctocMarkers,
   unmaskDocumentedMarkers,
 } from './doctoc-markers';
-import { runNpx } from './run-npx';
+import { runTool } from './run-tool';
 import { relocateTocBeforeFirstH2 } from './toc-placement';
 
 /**
@@ -69,7 +69,7 @@ export function runDoctoc(context: ConversionContext): void {
   context.inputMarkdown = path.join(context.workdir, context.baseName);
   fs.writeFileSync(context.inputMarkdown, maskDocumentedMarkers(source));
 
-  runNpx([context.options.packages.doctoc, context.inputMarkdown], { verbose: context.options.verbose });
+  runTool('doctoc', [context.inputMarkdown], context.options);
 
   let refreshed = fs.readFileSync(context.inputMarkdown, 'utf8');
 
