@@ -76,6 +76,8 @@ its own module rather than being `export`ed out of a file that also does I/O.
 `process.platform`, out of `merge-assembly.ts`, `resolve-inputs.ts` and
 `merge-markdown.ts`),
 `toc-placement.ts` (TOC relocation rules, out of `run-doctoc.ts`),
+`temp-registry.ts` (which temp directories a signal has to remove, out of
+`md2pdf.ts`),
 `doctoc-markers.ts` (genuine-marker detection, masking and the `-u` write-back
 check, out of `run-doctoc.ts`),
 `merge-assembly.ts` (concatenation and common-ancestor computation, out of
@@ -104,6 +106,12 @@ After argument parsing it enters an `async run()` function that imports `@clack/
 
 Each per-file step is a function that accepts a `ConversionContext` and **mutates it in place**. These steps return `void`, except `inlineAssets`, which returns the non-fatal warnings the caller surfaces via `log.warn`. Steps run in order; `cleanup` runs in a `finally` block unconditionally.
 
+`prepareWorkdir` runs **inside** that per-file `try` (#51), so an unusable `-o` fails just that file — counted, cleaned up, and followed by the next one — instead of aborting the whole run without a summary. `prepare-workdir.ts` creates the target directory *before* `mkdtempSync` for the same reason. The merge step and the CSS temp directory are likewise created inside the run's outer `try`, and the "nothing to merge" exit happens before any temp directory exists, since `process.exit` does not run `finally` blocks.
+
+Temp directories that are alive right now are tracked by `createTempRegistry` (`src/steps/temp-registry.ts`) and removed by a `SIGINT`/`SIGTERM` handler, which `finally` alone does not cover: Ctrl-C used to leave the work directory behind, with `-p` inside the user's own output directory (#51). While an external tool runs, `execFileSync` blocks the event loop, so the handler fires once that child — which receives the same signal — has exited. `-k` keeps every temp directory and now says where the effective stylesheet was kept, without which the kept work directory could not reproduce the run.
+
+Invoking the tool with no arguments prints the help to stderr and exits **1**: that is a usage error, not a successful run.
+
 Before the per-file loop, three steps run once for the whole run and have their own signatures rather than taking a `ConversionContext`: `resolveInputs` (`src/steps/resolve-inputs.ts`) turns the raw positional arguments into the concrete list of Markdown files and returns that list; when `--merge` is set, `mergeMarkdown` (`src/steps/merge-markdown.ts`) concatenates that list into one temporary Markdown file (returned alongside its temp dir) that the loop then runs over exactly once; and `resolveStylesheet` (`src/steps/resolve-stylesheet.ts`) resolves the effective CSS path once for the whole run, returning it so `md2pdf.ts` can assign it to `context.effectiveStylesheet` inside the loop.
 
 ```
@@ -111,6 +119,8 @@ resolveInputs → [findOutputCollisions | mergeMarkdown] → resolveStylesheet �
   prepareWorkdir → assertOutputReplaceable → runDoctoc → extractTitle → renderMermaid
     → inlineAssets → renderPdf → [renderHtml] → copyOutput → cleanup
 ```
+
+Whether Mermaid runs is decided on `context.inputMarkdown` — what `renderMermaid` actually reads — rather than on the source file, which `runDoctoc` may have replaced with the temp copy in between (#51). The plain copy taken when there are no Mermaid fences goes through `runStep` like every other step, so it has a label and a failure marker.
 
 `renderHtml` only runs when `--debug` is set, emitting a standalone HTML file alongside the PDF. `findOutputCollisions` runs for non-merged runs only; both it and `assertOutputReplaceable` are described under *Output writing*.
 
@@ -294,6 +304,10 @@ To enable per-heading page breaks: `--css-var heading-page-break-before=always -
 ### External tool invocation
 
 All three sub-tools are invoked via `npx` through `runNpx` (`src/steps/run-npx.ts`). Output is piped (hidden) by default and inherited when `--verbose` is set. On failure, `runNpx` re-throws with the tool's stderr/stdout as the error message. Fallback versions are hardcoded in `resolve-options.ts` (not the `^` ranges in `package.json`):
+
+Every external tool gets a wall-clock timeout (10 minutes, `MD2PDF_TOOL_TIMEOUT` in milliseconds overrides it, `0` disables it) and a 64 MiB output buffer (#51): a wedged Chromium used to block the run forever, and a chatty failure past the old 10 MiB buffer was killed with `ENOBUFS` and reported as a tool failure.
+
+The document title is passed as `--document-title=<title>`, one argv element. As two elements, md-to-pdf's parser took the following token for a flag whenever the title started with `--` — a first heading of `# --version` aborted the run with a raw Node stack trace (#51).
 
 `runNpx` uses `execFileSync` with an **argument array** and no shell. It must never build a command string: `cmd.exe` expands `%VAR%` even inside double quotes, and `%` is legal in Windows file names, so a path like `100%TMP%done.md` or a `--document-title` taken from a heading such as `Deploying to %USERPROFILE%` would be silently rewritten before the tool sees it.
 

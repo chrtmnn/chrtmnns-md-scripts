@@ -25,6 +25,11 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
   // fail the run with a raw ENAMETOOLONG (#55).
   const tempStem = shortenStemForTemp(stem);
 
+  // Before the work directory, not after: an unusable `-o` (a path that is a
+  // file, say) used to fail *after* `mkdtempSync` had already created the
+  // work directory, which nothing then removed (#51).
+  fs.mkdirSync(targetDir, { recursive: true });
+
   let workdir: string;
   if (options.tempInOutput) {
     const baseOut = options.outputDir ? path.resolve(options.outputDir) : sourceDir;
@@ -37,8 +42,6 @@ export function prepareWorkdir(sourceFile: string, options: ConverterOptions): C
   } else {
     workdir = fs.mkdtempSync(path.join(os.tmpdir(), `${tempStem}_`));
   }
-
-  fs.mkdirSync(targetDir, { recursive: true });
 
   return {
     options,

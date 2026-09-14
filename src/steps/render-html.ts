@@ -20,8 +20,10 @@ export function renderHtml(context: ConversionContext): void {
     context.convertedMarkdown,
     '--basedir',
     context.workdir,
-    '--document-title',
-    context.docTitle,
+    // Inline, not two argv elements: md-to-pdf's parser takes the following
+    // token for a flag when the title starts with `--`, so a first heading of
+    // `# --version` aborted the run with a raw Node stack trace (#51).
+    `--document-title=${context.docTitle}`,
     '--as-html',
   ];
 
