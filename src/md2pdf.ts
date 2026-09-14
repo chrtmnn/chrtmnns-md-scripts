@@ -19,6 +19,7 @@ import { hasMermaidFences, renderMermaid } from './steps/render-mermaid';
 import { renderHtml } from './steps/render-html';
 import { renderPdf } from './steps/render-pdf';
 import { resolveOptions } from './steps/resolve-options';
+import { createStatusLine } from './steps/status-line';
 import { createTempRegistry } from './steps/temp-registry';
 import { runDoctoc, shouldRunDoctoc } from './steps/run-doctoc';
 import { describeStylesheet } from './steps/stylesheet-lookup';
@@ -50,63 +51,61 @@ function formatError(error: unknown): string {
 }
 
 async function run(options: ConverterOptions): Promise<void> {
-  const { intro, isTTY, log, outro, spinner } = await import('@clack/prompts');
+  const { S_STEP_ACTIVE, intro, isTTY, log, outro } = await import('@clack/prompts');
 
-  // A spinner only makes sense on a terminal: piped into a file or a CI log,
-  // its cursor escapes (ESC[?25l) end up in the output, and `--verbose` wants
+  // The live line only makes sense on a terminal: piped into a file or a CI
+  // log its escape sequences would end up in the output, and `--verbose` wants
   // a durable line per step rather than one that is overwritten (#59).
   const interactive = isTTY(process.stdout) && !options.verbose;
+  const status = createStatusLine(process.stdout, interactive);
+
+  /**
+   * Shows what is running right now, in clack's own line shape.
+   *
+   * @param text - Step description, already prefixed with the file name.
+   */
+  function showStatus(text: string): void {
+    status.show(`${S_STEP_ACTIVE}  ${text}`);
+  }
 
   function runStep<T>(label: string, action: () => T): T {
-    if (!interactive) {
-      if (options.verbose) {
-        log.info(label);
-      }
-
-      try {
-        const result = action();
-        if (options.verbose) {
-          log.success(label);
-        }
-        return result;
-      } catch (error) {
-        // Without this the verbose output ended on the plain "started" line (#51).
-        log.error(`${label} failed`);
-        throw error;
-      }
+    if (options.verbose) {
+      log.info(label);
     }
-
-    const step = spinner();
-    step.start(label);
+    showStatus(label);
 
     try {
       const result = action();
-      step.stop(label);
+      if (options.verbose) {
+        log.success(label);
+      }
+      status.hide();
       return result;
     } catch (error) {
-      step.error(`${label} failed`);
+      status.hide();
+      // Without this the output ended on the plain "started" line (#51).
+      log.error(`${label} failed`);
       throw error;
     }
   }
 
   /**
-   * One spinner for a whole file, whose message names the step in progress.
+   * One live line for a whole file, naming the step in progress.
    *
    * Seven persistent lines per file buried the warnings in a 30-file run
-   * (#59), so the steps share a single line that ends as `Created <pdf>`; the
-   * per-step lines come back with `--verbose`.
+   * (#59), so the steps share a single line that is rewritten in place and
+   * ends as `Created <pdf>`; the per-step lines come back with `--verbose`.
    */
   function fileProgress(name: string) {
-    const step = interactive ? spinner() : undefined;
-    step?.start(name);
+    showStatus(name);
 
     return {
-      /** Runs one pipeline step under this file's spinner. */
+      /** Runs one pipeline step, naming it on this file's line. */
       run<T>(label: string, action: () => T): T {
         if (options.verbose) {
           log.info(`${name} · ${label}`);
         }
-        step?.message(`${name} · ${label}`);
+        showStatus(`${name} · ${label}`);
 
         try {
           const result = action();
@@ -115,23 +114,32 @@ async function run(options: ConverterOptions): Promise<void> {
           }
           return result;
         } catch (error) {
-          if (!step) {
+          status.hide();
+          if (!interactive) {
             log.error(`${name} · ${label} failed`);
           }
           throw error;
         }
       },
+      /** Reports a non-fatal problem without disturbing the live line. */
+      warn(message: string): void {
+        status.hide();
+        log.warn(message);
+      },
       /** Ends the file with a success message. */
       done(message: string): void {
-        step ? step.stop(message) : log.success(message);
+        status.hide();
+        log.success(message);
       },
       /** Ends the file with a failure message. */
       failed(message: string): void {
-        step ? step.error(message) : log.error(message);
+        status.hide();
+        log.error(message);
       },
       /** Ends the file with a neutral message, for a skipped file. */
       skipped(message: string): void {
-        step ? step.cancel(message) : log.warn(message);
+        status.hide();
+        log.warn(message);
       },
     };
   }
@@ -190,6 +198,7 @@ async function run(options: ConverterOptions): Promise<void> {
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
+      status.hide();
       tempDirs.removeAll();
       // 128 + signal number, the shell convention for a terminated process.
       process.exit(signal === 'SIGINT' ? 130 : 143);
@@ -267,7 +276,7 @@ async function run(options: ConverterOptions): Promise<void> {
         // `-u` only refreshes an existing marker block. A broken pair is
         // reported by runDoctoc, and a merged run cannot carry `-u`.
         if (options.writeToc && scanDoctocMarkers(fs.readFileSync(active.sourceFile, 'utf8')).kind === 'none') {
-          log.warn(describeMissingMarkerBlock(active.sourceFile, options.toc === 'always'));
+          progress.warn(describeMissingMarkerBlock(active.sourceFile, options.toc === 'always'));
         }
         if (shouldRunDoctoc(options, active.sourceFile)) {
           progress.run('Table of contents', () => runDoctoc(active));
@@ -294,7 +303,7 @@ async function run(options: ConverterOptions): Promise<void> {
         // md-to-pdf renders from a server rooted at the work directory, so
         // the document's own assets have to be carried into the converted
         // Markdown before it runs.
-        progress.run('Embedding assets', () => inlineAssets(active)).forEach((warning) => log.warn(warning));
+        progress.run('Embedding assets', () => inlineAssets(active)).forEach((warning) => progress.warn(warning));
         progress.run('Rendering PDF', () => renderPdf(active));
         if (options.html) {
           progress.run('Rendering HTML', () => renderHtml(active));

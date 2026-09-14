@@ -77,7 +77,8 @@ its own module rather than being `export`ed out of a file that also does I/O.
 `merge-markdown.ts`),
 `toc-placement.ts` (TOC relocation rules, out of `run-doctoc.ts`),
 `temp-registry.ts` (which temp directories a signal has to remove, out of
-`md2pdf.ts`),
+`md2pdf.ts`), `status-line.ts` (the live progress line's escape sequences and
+width handling, out of `md2pdf.ts`),
 `doctoc-markers.ts` (genuine-marker detection, masking and the `-u` write-back
 check, out of `run-doctoc.ts`),
 `merge-assembly.ts` (concatenation and common-ancestor computation, out of
@@ -117,9 +118,11 @@ Commander cannot give one option two long names, so each retired **short** flag 
 
 Commander 12 has no `Option.helpGroup()` (v14 added it), so `--help` renders Commander's usage and arguments, then a grouped option block built by `formatOptionGroups` from `HELP_GROUPS` in `cli-program.ts` (`visibleOptions` is emptied so the flat list is not printed twice). `cli-program.test.ts` asserts that every visible option has exactly one row in that block, which is what stops a newly added option from disappearing from the help.
 
-After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / progress / `outro` UI. The run-level steps go through `runStep(label, action)`; each **file** gets a single spinner from `fileProgress(name)` whose message names the step in progress (`README.md · Rendering PDF`) and which stops as `Created <pdf>` (#59). Seven persistent lines per file used to bury the warnings of a 30-file run.
+After argument parsing it enters an `async run()` function that imports `@clack/prompts` and renders an `intro` / progress / `outro` UI. The run-level steps go through `runStep(label, action)`; each **file** gets one live line from `fileProgress(name)` naming the step in progress (`README.md · Rendering PDF`), and only its outcome (`Created <pdf>`) stays on screen (#59). Seven persistent lines per file used to bury the warnings of a 30-file run.
 
-The spinner is used only when `isTTY(process.stdout)` holds and `--verbose` is off: piped into a file or a CI log its cursor escapes (`ESC[?25l`) would end up in the output, and `--verbose` wants a durable line per step instead of one that is overwritten. A non-interactive run therefore prints the intro, whatever warnings and results there are, and the outro — nothing else.
+That live line is written by `createStatusLine` (`src/steps/status-line.ts`), **not** by a `@clack/prompts` spinner (#65). A spinner cannot work here: its `start()` only arms a `setInterval` and its `message()` merely stores the text, so every frame comes from that timer — and the pipeline is synchronous from end to end (`execFileSync` for doctoc, mermaid-cli and md-to-pdf, sync `fs` everywhere else), so the event loop never runs between `start()` and `stop()`. Not one frame was ever painted: the terminal kept showing the previous step's finished line for the whole conversion. Writing the line ourselves is one synchronous `write` per update: `\r` + erase-to-end-of-line, then the text, truncated to one column less than the terminal width, since a wrapped line occupies two rows and only the last of them can be erased again.
+
+The line is written only when `isTTY(process.stdout)` holds and `--verbose` is off: piped into a file or a CI log the escape sequences would end up in the output, and `--verbose` wants a durable line per step instead of one that is overwritten. A non-interactive run therefore prints the intro, whatever warnings and results there are, and the outro — nothing else. Anything that prints while the line is up (`progress.warn`, every outcome method, the signal handler) blanks it first, so a warning cannot collide with it.
 
 Each per-file step is a function that accepts a `ConversionContext` and **mutates it in place**. These steps return `void`, except `inlineAssets`, which returns the non-fatal warnings the caller surfaces via `log.warn`. Steps run in order; `cleanup` runs in a `finally` block unconditionally.
 
