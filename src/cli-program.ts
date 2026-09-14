@@ -7,8 +7,8 @@ import { collect } from './steps/resolve-options';
  * Help sections, keyed by the long flag of every option that belongs in them.
  *
  * The flat list of 13 options named after the implementation was the first
- * complaint in #59. Commander 12 has no `Option.helpGroup()` (that arrived in
- * v14), so the grouped block is rendered here and appended to the help.
+ * complaint in #59. The grouped block is rendered here and appended to the
+ * help; it predates Commander 14's `Option.helpGroup()`, which could replace it.
  * `cli-program.test.ts` asserts that every visible option appears in exactly
  * one group, which is what keeps the two from drifting apart.
  */

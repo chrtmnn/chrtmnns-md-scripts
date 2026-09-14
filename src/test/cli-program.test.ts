@@ -4,7 +4,7 @@
  * option name still parses.
  *
  * The grouping is data in `cli-program.ts` rather than a Commander feature
- * (v12 has no `helpGroup`), so the test that matters is the one that catches a
+ * (it predates Commander's `helpGroup`), so the test that matters is the one that catches a
  * new option nobody put in a group.
  */
 

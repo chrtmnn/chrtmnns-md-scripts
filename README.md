@@ -31,7 +31,7 @@ The command shows a compact progress view, refreshes an existing doctoc table of
 
 Prerequisites:
 
-- Node.js 22 or later
+- Node.js 22.12 or later
 
 Install the command globally with npm:
 

@@ -157,12 +157,14 @@ test('masking refuses a document that already contains a masked marker', () => {
   assert.throws(() => maskDocumentedMarkers(masked), /already contains a masked doctoc marker/);
 });
 
-test('doctoc itself truncates a document at an inline-code marker example', () => {
-  // The hazard the masking exists for: without it, doctoc replaces everything
-  // from the example to the end of the file.
+test('doctoc 2.5 leaves an inline-code marker example alone', () => {
+  // doctoc up to 2.3.0 matched its markers on every line and replaced
+  // everything from this example to the end of the file (#44). 2.5 only looks
+  // at HTML nodes of the parsed document. The masking stays for a DOCTOC_PKG
+  // override that selects an older version.
   const result = doctocTransform(INLINE_EXAMPLE_DOC);
 
-  assert.equal(result.data?.includes('Everything down here must survive.'), false);
+  assert.equal(result.data?.includes('Everything down here must survive.'), true);
 });
 
 test('with masking, doctoc creates a TOC and keeps the rest of the document', () => {
