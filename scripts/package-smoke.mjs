@@ -41,12 +41,15 @@ const config = path.join(root, 'config');
 
 /**
  * Runs a command line through the shell: npm and the installed md2pdf are
- * batch files on Windows, which Node only starts through one. Every value
- * passed here is a flag or a path this script chose, so quoting each part is
- * enough.
+ * batch files on Windows, which Node only starts through one. Every argument
+ * is a flag or a path this script chose, so quoting each one is enough. A bare
+ * command name stays unquoted: cmd.exe resolves `%~dp0` of a batch file called
+ * as `"npm"` to the working directory, and npm.cmd then looks for its
+ * `npm-cli.js` there.
  */
 function run(command, args, { cwd = root, env = process.env, capture = false } = {}) {
-  const line = [command, ...args].map((part) => `"${part}"`).join(' ');
+  const executable = /[\\/]/.test(command) ? `"${command}"` : command;
+  const line = [executable, ...args.map((part) => `"${part}"`)].join(' ');
   console.log(`> ${line}`);
   return execSync(line, { cwd, env, encoding: 'utf8', stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit'] });
 }
