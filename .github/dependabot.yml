@@ -12,9 +12,12 @@ updates:
     cooldown:
       default-days: 7
 
-  # The workflows pin every action to a commit SHA.
+  # The workflows and the local setup action pin every action to a commit SHA.
+  # `/` only covers .github/workflows, so the composite actions are listed too.
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /.github/actions/*
     schedule:
       interval: weekly
     cooldown:

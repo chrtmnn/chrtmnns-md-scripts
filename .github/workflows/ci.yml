@@ -1,0 +1,158 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # New advisories appear without any commit, so the audit also runs weekly.
+  # Every other job skips scheduled runs.
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels the run it supersedes. Every other run
+# gets a group of its own: GitHub cancels a *pending* run whenever a newer one
+# joins its group, even without cancel-in-progress, and runs on main must
+# always finish.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - run: pnpm typecheck
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # Blocks on critical advisories only: the high ones all arrive through
+      # mermaid-cli and Puppeteer and cannot be fixed in this repository (#56).
+      - run: pnpm audit --audit-level critical
+
+  lint:
+    # Keeps a future edit from quietly dropping a guarantee the workflows rely
+    # on: SHA-pinned actions, persist-credentials: false, minimal permissions,
+    # OIDC only in the publish job (#72).
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+
+      # Plain annotations and a failing job instead of a SARIF upload, which
+      # would need security-events: write.
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          advanced-security: false
+          annotations: true
+
+  test:
+    # Windows is the primary target of this tool, and the junction and
+    # `npx.cmd` guarantees can only be verified there (#50).
+    if: github.event_name != 'schedule'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - if: runner.os != 'Linux'
+        run: pnpm test
+
+      # On Linux the same tests run with coverage and the report lands in the
+      # job summary. Report only, no threshold, until #71 makes the total
+      # meaningful.
+      - name: Test with coverage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          pnpm test:coverage | tee "$RUNNER_TEMP/coverage.txt"
+          {
+            echo '### Test coverage'
+            echo
+            echo '```'
+            sed -n '/start of coverage report/,/end of coverage report/p' "$RUNNER_TEMP/coverage.txt" | sed -E 's/^(ℹ|#) //'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  package:
+    # Packs the npm package, installs the tarball into a throwaway global
+    # prefix and converts a document with the installed command (#56). This is
+    # the only job that runs doctoc and md-to-pdf for real, and the one that
+    # notices a file missing from dist/.
+    if: github.event_name != 'schedule'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22']
+        include:
+          # The engines lower bound: the CommonJS build require()s the
+          # ESM-only Commander 15, which Node supports from 22.12.0 on.
+          - os: ubuntu-latest
+            node: 22.12.0
+          # The current LTS line.
+          - os: ubuntu-latest
+            node: '24'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ matrix.node }}
+
+      - run: pnpm build
+
+      - name: Check the package contents
+        id: pack
+        shell: bash
+        run: node scripts/pack-check.mjs "$RUNNER_TEMP/pack"
+
+      # Ubuntu 24.04 forbids the unprivileged user namespaces Chromium's
+      # sandbox needs; turning the restriction off beats running Chromium
+      # without a sandbox.
+      - name: Allow Chromium's sandbox
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install the tarball and convert a document
+        shell: bash
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: node scripts/package-smoke.mjs "$TARBALL"
