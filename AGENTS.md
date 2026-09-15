@@ -106,7 +106,8 @@ validation, out of `resolve-options.ts`), `css-var-usage.ts` (the unused
 override — and the error formatting, out of `run-tool.ts`), `css-structure.ts` (the comment/string/brace scan behind the
 `@import` and `url()` rewrites, out of `resolve-stylesheet.ts`), `css-import-hoisting.ts` (remote `@import` placement and
 restating, out of `resolve-stylesheet.ts`), `stylesheet-lookup.ts` (the `-s`
-lookup order, out of `resolve-options.ts`) and `output-targets.ts` (output path
+lookup order, out of `resolve-options.ts`), `md-to-pdf-args.ts` (the md-to-pdf
+argument list both renders share, out of `render-pdf.ts` and `render-html.ts`) and `output-targets.ts` (output path
 derivation, collision detection and the debug-HTML generator marker, out of
 `prepare-workdir.ts` and `copy-output.ts`) all follow that split: the step file
 keeps the filesystem work, the extracted module keeps the rules.
@@ -241,7 +242,9 @@ The `-k` flag preserves the temp dir for debugging.
 
 md-to-pdf is invoked with `--basedir <workdir>`. That is not a free choice: md-to-pdf serves `--basedir` over HTTP and loads the document from `http://localhost:<port>/<path relative to basedir>`, so the served directory has to be the one holding the converted Markdown and the generated Mermaid SVGs. Pointing `--basedir` at the source directory instead would put the document outside the served root and break the Mermaid references.
 
-`renderPdf` also passes `--config-file src/config/md-to-pdf.config.json`, which sets `pdf_options.preferCSSPageSize: true`. Without it Puppeteer's `format: 'a4'` default wins over the stylesheet's `@page { size }`, and Chromium scales a non-A4 CSS page (e.g. `--css-var page-size=A5`) down onto A4 sheets. `--pdf-options` is deliberately not used for this: md-to-pdf assigns it over `pdf_options` wholesale, which would drop the `printBackground` / `format` / `margin` defaults and any front-matter `pdf_options`. A config file is merged onto the defaults, and front matter still takes precedence over it.
+`renderPdf` and `renderHtml` both pass `--config-file src/config/md-to-pdf.config.json`, which sets `pdf_options.preferCSSPageSize: true`. Without it Puppeteer's `format: 'a4'` default wins over the stylesheet's `@page { size }`, and Chromium scales a non-A4 CSS page (e.g. `--css-var page-size=A5`) down onto A4 sheets. `--pdf-options` is deliberately not used for this: md-to-pdf assigns it over `pdf_options` wholesale, which would drop the `printBackground` / `format` / `margin` defaults and any front-matter `pdf_options`. A config file is merged onto the defaults, and front matter still takes precedence over it.
+
+The config file applies to **both** renders (#64). `pdf_options` is ignored under `--as-html`, but most other md-to-pdf keys shape the page itself (`marked_options`, `css`, `body_class`, `highlight_style`, `launch_options`, `page_media_type`, …), so a key only the PDF saw would quietly stop `--html` being a preview of it. The two argument lists therefore come from one place: `buildMdToPdfArgs` (`src/steps/md-to-pdf-args.ts`) builds the shared part — converted Markdown, `--basedir`, `--document-title=`, `--config-file`, the optional `--stylesheet` — and `renderHtml` only appends `--as-html`. A new md-to-pdf flag that belongs to both outputs goes there, never into one step.
 
 ### Asset embedding (`src/steps/inline-assets.ts`)
 
