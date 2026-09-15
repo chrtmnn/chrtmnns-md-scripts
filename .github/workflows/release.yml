@@ -26,6 +26,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     outputs:
@@ -36,14 +37,6 @@ jobs:
           persist-credentials: false
           # Full history, so the tagged commit can be checked against main.
           fetch-depth: 0
-
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      # No dependency cache: a release must not restore anything another
-      # workflow run wrote.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
 
       - name: Check that the tag matches package.json
         run: |
@@ -60,7 +53,11 @@ jobs:
             exit 1
           fi
 
-      - run: pnpm install --frozen-lockfile
+      # The tag checks above run before anything is installed. No dependency
+      # cache: a release must not restore anything another workflow run wrote.
+      - uses: ./.github/actions/setup
+        with:
+          cache: false
 
       - run: pnpm audit --audit-level critical
 
@@ -98,6 +95,7 @@ jobs:
   publish:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: npm
     permissions:
       contents: read
@@ -120,11 +118,13 @@ jobs:
           fi
           echo "$TARBALL_SHA256  ${tarballs[0]}" | sha256sum --check --strict
 
-      # Node 24 ships an npm CLI with Trusted Publishing support.
+      # Node 24 ships an npm CLI with Trusted Publishing support. No cache, as
+      # in verify: setup-node would otherwise enable one on its own.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Require an npm CLI with Trusted Publishing
         run: |

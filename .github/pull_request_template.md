@@ -8,4 +8,4 @@
 
 ## Verification
 
-<!-- How was this checked? e.g. `pnpm typecheck`, manual run of `md2pdf` on a sample file. -->
+<!-- How was this checked? e.g. `pnpm typecheck` and `pnpm test`, a manual run of `md2pdf` on a sample file. The `ci` workflow's `typecheck`, `audit`, `lint`, `test` and `package` checks must pass. -->

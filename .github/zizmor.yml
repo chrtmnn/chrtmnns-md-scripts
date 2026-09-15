@@ -1,0 +1,7 @@
+rules:
+  # Wants `uses: $/.github/actions/setup` instead of `./.github/actions/setup`.
+  # actionlint (1.7.12) predates that syntax and rejects it as an invalid
+  # action reference, so the lint job cannot satisfy both. Re-enable once
+  # actionlint accepts `$/` (#72).
+  self-repository:
+    disable: true
