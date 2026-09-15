@@ -19,6 +19,7 @@ The command shows a compact progress view, refreshes an existing doctoc table of
 - [Uninstall](#uninstall)
 - [Additional usage information](#additional-usage-information)
   - [Converting Folders](#converting-folders)
+  - [Output Files](#output-files)
   - [Merging Into One PDF](#merging-into-one-pdf)
   - [Personal Stylesheets](#personal-stylesheets)
   - [Manual Page Breaks](#manual-page-breaks)
