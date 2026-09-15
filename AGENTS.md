@@ -28,11 +28,23 @@ A release is a change like any other up to the tag — the version bump goes thr
 4. `git push origin v<x.y.z>` — only this tag, not `--tags`, so no stray local tag starts a release
 5. Approve the `publish` job of the `release` workflow run in the `npm` environment. It publishes the tarball the `verify` job built, tested and smoke-tested; nothing is built during the publish itself (see *Packaging and release*).
 
+**When a release fails**:
+
+| Job | Symptom | What to do |
+|---|---|---|
+| `verify` | Tag does not match `version` or points outside `main`; audit, tests, pack check or smoke test fail | Nothing was published. Delete the tag (`git push origin :refs/tags/v<x.y.z>`, `git tag -d v<x.y.z>`), fix the cause through a pull request and tag the new merged commit. |
+| `publish` | `E403 … OIDC permission denied for this action` | Authentication worked, the action did not: the Trusted Publisher does not allow `npm publish` (*One-time npm setup*, step 3). Tick it on npmjs.com, then *Re-run failed jobs* and approve again. |
+| `publish` | `ENEEDAUTH`, `E401`, `E404` or "Unable to authenticate" | The OIDC exchange failed and nothing was published. Compare the Trusted Publisher fields exactly — repository, workflow file name including `.yml`, environment `npm` — and check that `publish` still has `id-token: write`. Then *Re-run failed jobs*. |
+| `publish` | `You cannot publish over the previously published versions` | The version already exists because `version` was not bumped. Release the next version. |
+| after the release | A broken version is live | npm never overwrites a version. Release the fix as the next patch and mark the broken one with `npm deprecate @chrtmnn/md2pdf@<x.y.z> "<message>"` (2FA prompt). |
+
+*Re-run failed jobs* needs no new tag: it reruns only `publish`, which reuses the digest `verify` recorded and the tarball artifact, kept for 7 days.
+
 **One-time npm setup** (#56) — none of this lives in the repository:
 
 1. An npm account with 2FA, preferably a security key. The package is published under its `@chrtmnn` user scope.
-2. Publish the first version by hand, because a Trusted Publisher can only be attached to an existing package: in a fresh clone at the merged release commit on `main` (steps 1–3 of *Per release*), `pnpm install --frozen-lockfile`, then `npm publish --access public` with the 2FA prompt. A fresh clone matters: npm packs every `README.*` regardless of `files`, so a local `README.pdf` would be published. Then push the tag and reject the `publish` approval of its run, since that version already exists.
-3. On npmjs.com, add a Trusted Publisher for `chrtmnn/chrtmnns-md-scripts` with workflow `release.yml` and environment `npm`.
+2. Publish the first version by hand, because a Trusted Publisher can only be attached to an existing package: in a fresh clone at the merged release commit on `main` (steps 1–3 of *Per release*), `pnpm install --frozen-lockfile`, then `npm publish --access public` with the 2FA prompt. A fresh clone matters: npm packs every `README.*` regardless of `files`, so a local `README.pdf` would be published. Then push the tag and reject the `publish` approval of its run, since that version already exists. That run proves nothing about the Trusted Publisher, even when approved: npm's OIDC step never throws, and the client refuses an existing version before it signs or uploads anything, so the first real release is the first real test.
+3. On npmjs.com, add a Trusted Publisher for `chrtmnn/chrtmnns-md-scripts` with workflow `release.yml` and environment `npm`, and under *Allowed actions* tick **`npm publish`**. A configuration created after 2026-09-03 allows only `npm stage publish` by default, and the workflow's direct `npm publish` is then refused with `E403 … OIDC permission denied for this action`: the identity matched, only the action was not allowed — the `v0.1.1` release ran into exactly that. npm does not validate the configuration when it is saved, and every field is case-sensitive.
 4. In the package settings on npmjs.com, choose *Require two-factor authentication and disallow tokens*.
 5. In the GitHub repository settings, create the environment `npm` with yourself as required reviewer and deployments limited to `v*` tags, and a tag ruleset that lets only you create, update or delete `v*` tags.
 
