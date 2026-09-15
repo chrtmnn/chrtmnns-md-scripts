@@ -5,6 +5,7 @@ import { createProgram } from './cli-program';
 import { formatError, PipelineReporter, runPipeline } from './pipeline';
 import { resolveOptions } from './steps/resolve-options';
 import { createStatusLine } from './steps/status-line';
+import { runTool } from './steps/run-tool';
 import { createTempRegistry } from './steps/temp-registry';
 import { ConverterOptions } from './types';
 
@@ -100,10 +101,9 @@ async function main(options: ConverterOptions): Promise<void> {
     });
   }
 
-  // Only a failing run ends the process explicitly; a successful one returns
-  // and lets Node exit on its own, so nothing the UI has written can be cut
-  // off by an early `process.exit`.
-  const exitCode = runPipeline(program.args, options, { reporter, tempDirs });
+  // A successful run returns and lets Node exit on its own, as it always has;
+  // only a failure sets the exit code explicitly.
+  const exitCode = runPipeline(program.args, options, { reporter, tempDirs, run: runTool });
   if (exitCode !== 0) {
     process.exit(exitCode);
   }

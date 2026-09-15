@@ -31,7 +31,6 @@ import { prepareWorkdir } from './steps/prepare-workdir';
 import { hasMermaidFences, renderMermaid } from './steps/render-mermaid';
 import { renderHtml } from './steps/render-html';
 import { renderPdf } from './steps/render-pdf';
-import { runTool } from './steps/run-tool';
 import { TempRegistry } from './steps/temp-registry';
 import { runDoctoc, shouldRunDoctoc } from './steps/run-doctoc';
 import { describeStylesheet } from './steps/stylesheet-lookup';
@@ -42,8 +41,9 @@ import { ConversionContext, ConverterOptions, ToolRunner } from './types';
  *
  * The four message methods mirror `@clack/prompts`' `log.*`; `status` and
  * `clearStatus` drive the transient line that names the step in progress
- * (#65). An implementation is expected to blank that line before printing a
- * message, so a warning can never collide with it.
+ * (#65). The run blanks the line itself wherever a message follows a live one,
+ * and an implementation is expected to blank it before printing anyway, so a
+ * warning can never collide with it.
  */
 export type PipelineReporter = {
   /** Opens the run. */
@@ -79,8 +79,12 @@ export type PipelineDependencies = {
    * the caller because the signal handlers that empty it do (#51).
    */
   tempDirs: TempRegistry;
-  /** Starts an external tool; defaults to the real {@link runTool}. */
-  run?: ToolRunner;
+  /**
+   * Starts an external tool. Required rather than defaulted: a caller that
+   * forgot it would spawn doctoc, mermaid-cli and Chromium for real, which is
+   * what #71 exists to prevent for the tests.
+   */
+  run: ToolRunner;
 };
 
 /**
@@ -103,8 +107,7 @@ export function formatError(error: unknown): string {
  *   file failed, was skipped, or the run was aborted before converting.
  */
 export function runPipeline(args: string[], options: ConverterOptions, deps: PipelineDependencies): number {
-  const { reporter, tempDirs } = deps;
-  const run = deps.run ?? runTool;
+  const { reporter, tempDirs, run } = deps;
 
   function runStep<T>(label: string, action: () => T): T {
     if (options.verbose) {
@@ -161,18 +164,22 @@ export function runPipeline(args: string[], options: ConverterOptions, deps: Pip
       },
       /** Reports a non-fatal problem without disturbing the live line. */
       warn(message: string): void {
+        reporter.clearStatus();
         reporter.warn(message);
       },
       /** Ends the file with a success message. */
       done(message: string): void {
+        reporter.clearStatus();
         reporter.success(message);
       },
       /** Ends the file with a failure message. */
       failed(message: string): void {
+        reporter.clearStatus();
         reporter.error(message);
       },
       /** Ends the file with a neutral message, for a skipped file. */
       skipped(message: string): void {
+        reporter.clearStatus();
         reporter.warn(message);
       },
     };

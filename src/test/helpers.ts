@@ -89,8 +89,9 @@ export function writePng(dir: string, relativePath: string): string {
 /**
  * Builds a complete {@link ConverterOptions} value with harmless defaults.
  *
- * No npx override is set; no test in this suite reaches a step that spawns a
- * conversion tool.
+ * No npx override is set. The pipeline tests do reach the steps that start a
+ * tool, but those get the fake runner from {@link createFakeTools}, so nothing
+ * is ever spawned (#71).
  *
  * @param overrides - Fields to override.
  * @returns Converter options usable by any step under test.

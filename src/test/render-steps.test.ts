@@ -66,6 +66,12 @@ test('renderPdf passes the shared argument list and nothing else', (t) => {
   renderPdf(context, tools.run);
 
   assert.deepEqual(tools.callsTo('mdToPdf')[0].args, buildMdToPdfArgs(context));
+  assert.equal(
+    tools.callsTo('mdToPdf')[0].args.includes('--as-html'),
+    false,
+    'the PDF render must not carry the HTML flag',
+  );
+  assert.ok(tools.callsTo('mdToPdf')[0].args.includes(context.effectiveStylesheet!), 'the stylesheet is passed on');
   assert.equal(fs.existsSync(context.tempPdf), true);
 });
 

@@ -25,6 +25,7 @@ import { ConverterOptions } from '../types';
 import {
   createFakeTools,
   createRecordingReporter,
+  ReportedLine,
   FakeToolBehaviour,
   FAKE_PDF_CONTENT,
   FakeTools,
@@ -101,6 +102,19 @@ function runFixture(
   }
 
   return { code, thrown, reporter: recorder, tools, registered, live: registry.live() };
+}
+
+/**
+ * Position of the first recorded line of a kind containing `needle`, for the
+ * assertions that care about order rather than presence.
+ *
+ * @param run - A finished fixture run.
+ * @param kind - Which reporter method to look for.
+ * @param needle - Substring the line must contain.
+ * @returns The index in `reporter.lines`, or `-1`.
+ */
+function indexOf(run: PipelineRun, kind: ReportedLine['kind'], needle: string): number {
+  return run.reporter.lines.findIndex((line) => line.kind === kind && line.text.includes(needle));
 }
 
 /** A stylesheet that reads one variable, for the `--css-var` checks. */
@@ -384,6 +398,10 @@ test('-u without a marker block warns before doctoc runs', (t) => {
 
   assert.equal(run.code, 0);
   assert.ok(run.reporter.has('warn', 'has no doctoc marker block'), 'the user is told the source stays as it is');
+  assert.ok(
+    indexOf(run, 'warn', 'has no doctoc marker block') < indexOf(run, 'status', 'Table of contents'),
+    'the warning comes before the doctoc step, not after it',
+  );
   assert.equal(fs.readFileSync(file, 'utf8'), '# Doc\n\n## Section\n', 'the source file is untouched');
 });
 
@@ -416,6 +434,10 @@ test('--html renders and copies the HTML next to the PDF, and nothing does witho
   assert.ok(
     fs.readFileSync(path.join(dir, 'doc.html'), 'utf8').includes('content="md2pdf"'),
     'the copied HTML carries the generator marker',
+  );
+  assert.ok(
+    indexOf(withHtml, 'success', 'doc.pdf') < indexOf(withHtml, 'success', 'doc.html'),
+    'the PDF is announced before the HTML',
   );
 
   fs.rmSync(path.join(dir, 'doc.html'));
@@ -518,4 +540,23 @@ test('--keep-temp also keeps the merged Markdown', (t) => {
   const kept = run.reporter.of('info').find((line) => line.startsWith('Merged Markdown kept at '));
   assert.ok(kept, 'the merged file is named');
   assert.equal(fs.existsSync(kept.replace('Merged Markdown kept at ', '')), true, 'and it is still there');
+});
+
+test('--title beats the name a merged run derives from --merge (#59)', (t) => {
+  const dir = tempDir(t);
+  const first = writeFile(dir, 'a.md', '# A\n');
+  const second = writeFile(dir, 'b.md', '# B\n');
+
+  const run = runFixture(t, [first, second], {
+    merge: 'book',
+    title: 'The Whole Book',
+    tempRoot: path.join(dir, 'temp'),
+  });
+
+  assert.equal(run.code, 0);
+  assert.ok(
+    run.tools.callsTo('mdToPdf')[0].args.includes('--document-title=The Whole Book'),
+    'the explicit title wins over the merge name',
+  );
+  assert.equal(fs.existsSync(path.join(dir, 'book.pdf')), true, 'the file is still named after --merge');
 });

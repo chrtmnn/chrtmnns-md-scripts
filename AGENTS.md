@@ -102,13 +102,16 @@ leaves nothing behind.
 `pnpm test:coverage` only reports files that at least one test imports. Node's
 `--test-coverage-include` does not change that — it filters the files V8
 reported, it does not add never-loaded ones (measured on Node 22.22 for #71) —
-so `md2pdf.ts` is missing from the table rather than listed at 0 %. That is the
-one module left out, and it is deliberately nothing but argument parsing, the
-clack reporter, the signal handlers and the exit code.
+so `md2pdf.ts` is missing from the table rather than listed at 0 % (as is the
+type-only `types.ts`, which has nothing to execute). It is the one module with
+executable code left out, and it is deliberately nothing but argument parsing,
+the clack reporter, the signal handlers and the exit code. The split that keeps
+it that small is a different one from the *Convention for testable helpers*
+below — process versus run, not I/O versus rules — and is described under
+*Pipeline model*.
 
 **Convention for testable helpers**: pure logic that deserves tests moves into
 its own module rather than being `export`ed out of a file that also does I/O.
-`pipeline.ts` (the conversion run, out of `md2pdf.ts` — see *Pipeline model*),
 `markdown-scan.ts` (scanning primitives, out of `run-doctoc.ts`),
 `path-rules.ts` (the Windows/POSIX path semantics the steps used to read off
 `process.platform`, out of `merge-assembly.ts`, `resolve-inputs.ts` and
@@ -157,9 +160,9 @@ Commander cannot give one option two long names, so each retired **short** flag 
 
 `--help` lists the options in sections (Input, Output, Styling, TOC, Diagrams, Diagnostics) through Commander's own `optionsGroup()`: `createProgram` sets the heading before each block of options. Commander orders the sections by the first option registered in each, so `-V, --version` is declared inside the Diagnostics block instead of first, and `-h, --help` is declared explicitly with `helpOption()`, because a lazily created help option carries no group and would open a generic `Options:` section. `--css-var` has no default value, which Commander would print as `(default: [])`; `collect` starts the list instead. `cli-program.test.ts` renders `helpInformation()` and asserts that no `Options:` section exists and every visible option has exactly one row, which is what stops a newly added option from landing outside the sections.
 
-The run itself is `runPipeline(args, options, { reporter, tempDirs, run })` in `src/pipeline.ts` and **returns an exit code** instead of calling `process.exit` (#71). `md2pdf.ts` keeps only what *is* the process: the argument parsing above, the `@clack/prompts` reporter, the `SIGINT`/`SIGTERM` handlers and the exit code — and it calls `process.exit` solely for a non-zero one, so a successful run ends on its own and nothing the UI wrote can be cut off. That split is what makes the orchestration testable at all: `md2pdf.ts` parses `process.argv` on import, so no test could ever load it, and the run-level logic went untested although most of the recent bugs lived there (#51, #59, #64, #65).
+The run itself is `runPipeline(args, options, { reporter, tempDirs, run })` in `src/pipeline.ts` and **returns an exit code** instead of calling `process.exit` (#71). `md2pdf.ts` keeps only what *is* the process: the argument parsing above, the `@clack/prompts` reporter, the `SIGINT`/`SIGTERM` handlers and the exit code — which it sets through `process.exit` for a failure only, exactly as before, a successful run having always ended by returning. That split is what makes the orchestration testable at all: `md2pdf.ts` parses `process.argv` on import, so no test could ever load it, and the run-level logic went untested although most of the recent bugs lived there (#51, #59, #64, #65).
 
-The three dependencies are what a test replaces. `PipelineReporter` is the sink for everything the run prints — `intro` / `outro`, the four `log.*` levels, and `status` / `clearStatus` for the transient line — and `md2pdf.ts` implements it over `@clack/prompts` and `createStatusLine`, blanking the live line before every message. `TempRegistry` is created by `md2pdf.ts` because the signal handlers that empty it live there. `run` is the `ToolRunner` the steps that spawn a tool receive, defaulting to the real `runTool`.
+The three dependencies are what a test replaces. `PipelineReporter` is the sink for everything the run prints — `intro` / `outro`, the four `log.*` levels, and `status` / `clearStatus` for the transient line — and `md2pdf.ts` implements it over `@clack/prompts` and `createStatusLine`, blanking the live line before every message. `TempRegistry` is created by `md2pdf.ts` because the signal handlers that empty it live there. `run` is the `ToolRunner` the steps that spawn a tool receive; `md2pdf.ts` passes the real `runTool` explicitly and the field is **not** optional, so a test that forgets it is a compile error rather than a run that spawns Chromium.
 
 Inside the run, the run-level steps go through `runStep(label, action)`; each **file** gets one live line from `fileProgress(name)` naming the step in progress (`README.md · Rendering PDF`), and only its outcome (`Created <pdf>`) stays on screen (#59). Seven persistent lines per file used to bury the warnings of a 30-file run. A run-level step that throws is not caught here: it aborts the whole run, and `md2pdf.ts` prints the message and exits 1.
 

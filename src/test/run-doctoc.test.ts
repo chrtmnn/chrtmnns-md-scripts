@@ -18,6 +18,9 @@ import { runDoctoc, shouldRunDoctoc } from '../steps/run-doctoc';
 import { ConversionContext } from '../types';
 import { createFakeTools, FAKE_TOC_LINES, FakeToolBehaviour, makeContext, makeOptions, tempDir, writeFile } from './helpers';
 
+/** The Private Use Area character `doctoc-markers.ts` masks a marker with. */
+const MASK = String.fromCharCode(0xe000);
+
 const START_MARKER = '<!-- START doctoc generated TOC please keep comment here to allow auto update -->';
 const END_MARKER = '<!-- END doctoc generated TOC please keep comment here to allow auto update -->';
 
@@ -114,7 +117,7 @@ test('a documented marker survives the run byte for byte', (t) => {
   const refreshed = fs.readFileSync(context.inputMarkdown, 'utf8');
 
   assert.ok(refreshed.includes(documented), 'the inline example came back unmasked');
-  assert.equal(refreshed.includes(''), false, 'no mask character was left behind');
+  assert.equal(refreshed.includes(MASK), false, 'no mask character was left behind');
 });
 
 test('-u writes a TOC-only refresh back to the source file', (t) => {
